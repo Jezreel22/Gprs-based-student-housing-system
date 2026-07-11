@@ -1,0 +1,2 @@
+- [Google OAuth setup](google-oauth.md) — needs VITE_GOOGLE_CLIENT_ID (frontend) + GOOGLE_CLIENT_ID (backend) secrets; UI gracefully hides Google button when not set
+- [Auth DB decisions](auth-db.md) — password_hash nullable (for OAuth users); students auto-verified on register; landlords start as pending → under_review on KYC submit

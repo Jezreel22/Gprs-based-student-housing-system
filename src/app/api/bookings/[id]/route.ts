@@ -1,0 +1,72 @@
+import { NextRequest } from "next/server";
+import { eq, inArray } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
+import { requireAuth } from "@/lib/auth";
+import { handleError, jsonResponse, errorResponse } from "@/lib/api";
+import type { BookingDetail, LandlordSummary } from "@/api/generated/api.schemas";
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const me = await requireAuth(req);
+    const { id } = await params;
+
+    const [booking] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id)).limit(1);
+    if (!booking) return errorResponse("Booking not found", 404);
+
+    // Only the student, the landlord, or an escrow_officer can view
+    if (booking.student_id !== me.id && booking.landlord_id !== me.id && me.role !== "escrow_officer") {
+      return errorResponse("Not authorized to view this booking", 403);
+    }
+
+    const [prop, student, landlord] = await Promise.all([
+      db.select().from(propertiesTable).where(eq(propertiesTable.id, booking.property_id)).limit(1).then((r) => r[0]),
+      db.select().from(usersTable).where(eq(usersTable.id, booking.student_id)).limit(1).then((r) => r[0]),
+      db.select().from(usersTable).where(eq(usersTable.id, booking.landlord_id)).limit(1).then((r) => r[0]),
+    ]);
+
+    const summary = (u: typeof student): LandlordSummary | undefined => {
+      if (!u) return undefined;
+      return {
+        id: u.id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        role: u.role,
+        verification_status: u.verification_status,
+      };
+    };
+
+    const response: BookingDetail = {
+      id: booking.id,
+      student_id: booking.student_id,
+      property_id: booking.property_id,
+      landlord_id: booking.landlord_id,
+      lease_start_date: booking.lease_start_date ?? null,
+      lease_duration_days: booking.lease_duration_days ?? null,
+      rent_amount_ngn: booking.rent_amount_ngn,
+      deposit_amount_ngn: booking.deposit_amount_ngn,
+      total_amount_ngn: booking.total_amount_ngn,
+      escrow_account_reference: booking.escrow_account_reference ?? null,
+      payment_method: booking.payment_method ?? null,
+      booking_status: booking.booking_status ?? "pending_payment",
+      dispute_status: booking.dispute_status ?? null,
+      occupancy_verified_at: booking.occupancy_verified_at?.toISOString() ?? null,
+      escrow_released_at: booking.escrow_released_at?.toISOString() ?? null,
+      created_at: booking.created_at?.toISOString() ?? null,
+      property: prop ? {
+        id: prop.id,
+        address: prop.address,
+        rent_amount_ngn: prop.rent_amount_ngn,
+        deposit_amount_ngn: prop.deposit_amount_ngn,
+        rooms: prop.rooms ?? 1,
+        listing_status: prop.listing_status ?? "draft",
+      } : undefined,
+      student: summary(student),
+      landlord: summary(landlord),
+    };
+
+    return jsonResponse(response);
+  } catch (err) {
+    return handleError(err, req);
+  }
+}
