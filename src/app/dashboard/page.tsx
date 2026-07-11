@@ -73,7 +73,7 @@ export default function Dashboard() {
 
   const handlePublish = (id: string) => {
     publishMutation.mutate({ id }, {
-      onSuccess: () => toast({ title: "Submitted for review", description: "Your listing will be reviewed and published shortly." }),
+      onSuccess: () => toast({ title: "Listing published", description: "Your property is now live and visible to students." }),
       onError: () => toast({ variant: "destructive", title: "Failed to publish" }),
     });
   };
@@ -115,14 +115,18 @@ export default function Dashboard() {
               <span className="text-sm text-muted-foreground capitalize">
                 {user.role.replace("_", " ")}
               </span>
-              {user.verification_status === "verified" ? (
-                <Badge className="bg-green-100 text-green-700 border-0 text-xs">
-                  <ShieldCheck className="h-3 w-3 mr-1" /> Verified
-                </Badge>
-              ) : (
-                <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
-                  <ShieldAlert className="h-3 w-3 mr-1" /> Pending Verification
-                </Badge>
+              {/* Verification badge only matters for landlords/agents who list
+                  properties — students don't go through KYC, so hide it for them. */}
+              {isLandlord && (
+                user.verification_status === "verified" ? (
+                  <Badge className="bg-green-100 text-green-700 border-0 text-xs">
+                    <ShieldCheck className="h-3 w-3 mr-1" /> Verified
+                  </Badge>
+                ) : (
+                  <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
+                    <ShieldAlert className="h-3 w-3 mr-1" /> Pending Verification
+                  </Badge>
+                )
               )}
             </div>
           </div>
@@ -218,7 +222,7 @@ export default function Dashboard() {
                             onClick={() => handlePublish(p.id)}
                             disabled={publishMutation.isPending}
                           >
-                            Submit for Review
+                            Publish
                           </Button>
                         )}
                         <Link href={`/properties/${p.id}`} className="flex-1">

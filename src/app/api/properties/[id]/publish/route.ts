@@ -14,11 +14,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!property) return errorResponse("Property not found", 404);
     if (property.landlord_id !== me.id) return errorResponse("Not your listing", 403);
 
+    // Auto-publish: listings go live immediately so students can find them on
+    // the landing page + browse page without a manual escrow-officer step.
     await db.update(propertiesTable)
-      .set({ listing_status: "pending", updated_at: new Date() })
+      .set({ listing_status: "live", published_at: new Date(), updated_at: new Date() })
       .where(eq(propertiesTable.id, id));
 
-    return jsonResponse({ message: "Listing submitted for review", listing_status: "pending" });
+    return jsonResponse({ id, listing_status: "live" });
   } catch (err) {
     return handleError(err, req);
   }

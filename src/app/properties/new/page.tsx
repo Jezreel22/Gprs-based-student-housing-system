@@ -85,8 +85,18 @@ export default function ListProperty() {
     const token = localStorage.getItem("naub_token");
     const raw = localStorage.getItem("naub_user");
     if (!token || !raw) { router.push("/login"); return; }
-    const user = JSON.parse(raw);
-    if (!["landlord", "agent"].includes(user.role)) {
+    // Guard the parse: a corrupt/stale `naub_user` would throw here, and an
+    // uncaught throw in useEffect trips Next.js's client error boundary
+    // ("Application error: a client-side exception has occurred"). Clear the
+    // bad value and force a fresh login instead. (dashboard/NavBar already
+    // guard this; /properties/new previously did not.)
+    let user: { role?: string } | null = null;
+    try { user = JSON.parse(raw); } catch {
+      localStorage.removeItem("naub_token");
+      localStorage.removeItem("naub_user");
+    }
+    if (!user) { router.push("/login"); return; }
+    if (!["landlord", "agent"].includes(user.role ?? "")) {
       toast({ variant: "destructive", title: "Only landlords and agents can list properties" });
       router.push("/dashboard");
     }
@@ -135,7 +145,7 @@ export default function ListProperty() {
 
     publishMutation.mutate({ id: createdPropertyId }, {
       onSuccess: () => {
-        toast({ title: "Submitted for review! 🎉", description: "Our Escrow Officer will review and publish your listing within 24 hours." });
+        toast({ title: "Listing published! 🎉", description: "Your property is now live and visible to students." });
         router.push("/dashboard");
       },
       onError: (e: any) => {
@@ -418,7 +428,7 @@ export default function ListProperty() {
 
               <div className="bg-[#F7F7F7] rounded-xl p-4 text-sm text-muted-foreground">
                 <p className="font-medium text-foreground mb-1">📋 What happens next?</p>
-                <p>Our Escrow Officer will review your listing within 24 hours. They'll verify the property photos and details, then publish it live. You'll be notified once approved.</p>
+                <p>Once you publish, your listing goes live immediately — students can find and book it right away from the landing page and browse page.</p>
               </div>
 
               <div className="flex gap-3">
@@ -432,7 +442,7 @@ export default function ListProperty() {
                   onClick={handlePublish}
                   disabled={publishMutation.isPending || photoMutation.isPending}
                 >
-                  {publishMutation.isPending ? "Submitting..." : "Submit for Review 🚀"}
+                  {publishMutation.isPending ? "Publishing..." : "Publish Listing 🚀"}
                 </Button>
               </div>
             </div>

@@ -46,7 +46,14 @@ export default function Admin() {
     const token = localStorage.getItem("naub_token");
     const raw = localStorage.getItem("naub_user");
     if (!token || !raw) { router.push("/login"); return; }
-    const user = JSON.parse(raw);
+    // Guard the parse — a corrupt `naub_user` would throw in useEffect and
+    // trip the client error boundary. Clear and re-login instead.
+    let user: { role?: string } | null = null;
+    try { user = JSON.parse(raw); } catch {
+      localStorage.removeItem("naub_token");
+      localStorage.removeItem("naub_user");
+    }
+    if (!user) { router.push("/login"); return; }
     if (user.role !== "escrow_officer") {
       toast({ variant: "destructive", title: "Admin access required" });
       router.push("/dashboard");
