@@ -44,6 +44,17 @@ export const usersTable = pgTable("users", {
   account_suspended: boolean("account_suspended").default(false),
   suspension_reason: text("suspension_reason"),
 
+  // ─── payout details (landlords/agents only) ─────────────────────────────
+  // We store the Paystack `recipient_code` so we can initiate transfers
+  // without re-collecting account details on every payout. The bank account
+  // number is stored plain-text for now; production-grade encryption is a
+  // follow-up (out of scope for this pass).
+  payout_bank_code: text("payout_bank_code"),
+  payout_account_number: text("payout_account_number"),
+  payout_account_name: text("payout_account_name"),
+  paystack_recipient_code: text("paystack_recipient_code"),
+  payout_details_set_at: timestamp("payout_details_set_at"),
+
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),
 });
@@ -140,6 +151,18 @@ export const bookingsTable = pgTable("bookings", {
   dispute_outcome: text("dispute_outcome"),
 
   booking_status: text("booking_status").default("pending_payment"),
+
+  // ─── payout / release tracking ────────────────────────────────────────
+  // Set when the app initiates a Paystack transfer to the landlord's bank
+  // account. `payout_transfer_reference` is the Paystack `transfer_code` we
+  // correlate the `transfer.success` / `transfer.failed` webhook events to.
+  payout_transfer_reference: text("payout_transfer_reference"),
+  payout_initiated_at: timestamp("payout_initiated_at"),
+  payout_attempts: integer("payout_attempts").default(0),
+  payout_error: text("payout_error"),
+  // Non-null means an escrow officer placed this booking on hold — the lazy
+  // auto-release helper skips it. Officer can release early via the override.
+  release_held_by_officer_at: timestamp("release_held_by_officer_at"),
 
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),

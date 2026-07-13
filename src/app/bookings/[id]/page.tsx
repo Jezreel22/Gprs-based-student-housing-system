@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard } from "lucide-react";
+import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2 } from "lucide-react";
 
 function formatNGN(n?: number | null) {
   return n ? `₦${n.toLocaleString("en-NG")}` : "₦—";
@@ -28,10 +28,23 @@ const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string; desc
   pending_payment: { label: "Awaiting Payment", color: "#717171", desc: "This booking is reserved. Complete your Paystack payment to move it into escrow." },
   pending_occupancy: { label: "Awaiting Occupancy Verification", color: "#FF5A5F", desc: "Enter the 6-character code your landlord gave you to confirm you've moved in." },
   pending_review: { label: "Verified — Awaiting Escrow Release", color: "#F57F17", desc: "Occupancy confirmed! Funds will be released to the landlord after the review period." },
+  release_pending: { label: "Payout In Progress", color: "#1565C0", desc: "Your escrow funds are being transferred to the landlord." },
+  release_failed: { label: "Payout Needs Attention", color: "#E1444A", desc: "The payout to the landlord didn't go through. An officer will retry." },
   completed: { label: "Completed", color: "#34A853", desc: "This booking is complete. Escrow has been released." },
   cancelled: { label: "Cancelled", color: "#717171", desc: "This booking was cancelled." },
   disputed: { label: "Disputed", color: "#E1444A", desc: "A dispute is under investigation by our Escrow Officer." },
 };
+
+// Translate a raw Paystack error into a student/landlord-safe message.
+// Never expose raw gateway text — it can include internal codes.
+function friendlyReleaseError(raw: string | null | undefined): string {
+  const lower = (raw ?? "").toLowerCase();
+  if (!lower) return "There was a problem sending the payout. An officer is reviewing this booking.";
+  if (lower.includes("insufficient")) return "The platform balance couldn't cover the payout. An officer will retry shortly.";
+  if (lower.includes("recipient") || lower.includes("account") || lower.includes("invalid"))
+    return "The landlord's bank account couldn't be credited. An officer will review and follow up.";
+  return "There was a problem sending the payout. An officer is reviewing this booking.";
+}
 
 // NEW BOOKING: /bookings/new?property_id=xxx
 // EXISTING BOOKING: /bookings/:id
@@ -432,6 +445,18 @@ function BookingPage() {
               <div className="flex justify-between text-xs text-green-600 font-medium">
                 <span>Escrow released</span>
                 <span>{new Date(b.escrow_released_at).toLocaleDateString()}</span>
+              </div>
+            )}
+            {b.booking_status === "release_pending" && (
+              <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                <Loader2 className="h-3.5 w-3.5 mt-0.5 animate-spin shrink-0" />
+                <span>Transfer initiated — funds will appear in the landlord's account shortly.</span>
+              </div>
+            )}
+            {b.booking_status === "release_failed" && (
+              <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>{friendlyReleaseError(b.payout_error)}</span>
               </div>
             )}
           </div>

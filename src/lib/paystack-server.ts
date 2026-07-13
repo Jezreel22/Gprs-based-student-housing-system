@@ -110,3 +110,156 @@ export function verifyWebhookSignature(rawBody: string, signatureHeader: string 
 }
 
 export { PAYSTACK_CURRENCY };
+
+// ─── Transfers / payouts ────────────────────────────────────────────────────
+//
+// On a charge, money lands in the platform's main Paystack merchant balance
+// (that's how Paystack works). When escrow is released, the platform calls
+// `transfer` to push that money to the landlord's bank account via the
+// `recipient_code` we minted when the landlord saved their payout details.
+//
+// All calls here are server-only — the secret key is required.
+
+interface Bank { name: string; code: string; }
+
+// Cache banks briefly (10 min). Paystack's bank list changes rarely, and the
+// dropdown is read on every landlord dashboard load.
+let banksCache: { at: number; list: Bank[] } | null = null;
+const BANKS_TTL_MS = 10 * 60 * 1000;
+
+export async function listBanks(country = "nigeria"): Promise<Bank[]> {
+  const now = Date.now();
+  if (banksCache && now - banksCache.at < BANKS_TTL_MS) return banksCache.list;
+
+  assertConfigured();
+  const res = await fetch(`${PAYSTACK_BASE}/bank?country=${encodeURIComponent(country)}&perPage=100`, {
+    headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+    cache: "no-store",
+  });
+  const json = (await res.json()) as any;
+  if (!res.ok || !json?.data) {
+    // Fall back to whatever we have cached, even if stale — better than nothing.
+    if (banksCache) return banksCache.list;
+    throw new Error(json?.message ?? `Paystack listBanks failed (HTTP ${res.status})`);
+  }
+  const list: Bank[] = (json.data as Array<{ name: string; code: string }>)
+    .map(b => ({ name: b.name, code: String(b.code) }))
+    .filter(b => b.name && b.code)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  banksCache = { at: now, list };
+  return list;
+}
+
+/**
+ * Verify that (account_number, bank_code) is a real, active account and return
+ * the registered account name. The landlord must confirm this name matches what
+ * they expect before we mint a transfer recipient.
+ */
+export async function resolveAccountNumber(input: {
+  account_number: string;
+  bank_code: string;
+}): Promise<{ account_name: string }> {
+  assertConfigured();
+  const res = await fetch(
+    `${PAYSTACK_BASE}/bank/resolve?account_number=${encodeURIComponent(input.account_number)}&bank_code=${encodeURIComponent(input.bank_code)}`,
+    {
+      headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+      cache: "no-store",
+    },
+  );
+  const json = (await res.json()) as any;
+  if (!res.ok || !json?.data?.account_name) {
+    const msg = json?.message ?? `Paystack resolveAccountNumber failed (HTTP ${res.status})`;
+    throw new Error(msg);
+  }
+  return { account_name: String(json.data.account_name).trim() };
+}
+
+/**
+ * Mint a Paystack transfer recipient (the token we use to send money to this
+ * bank account later). We store the returned `recipient_code` so subsequent
+ * transfers don't need to re-collect bank details.
+ */
+export async function createTransferRecipient(input: {
+  account_number: string;
+  bank_code: string;
+  account_name: string;
+}): Promise<{ recipient_code: string }> {
+  assertConfigured();
+  const res = await fetch(`${PAYSTACK_BASE}/transferrecipient`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      type: "nuban",
+      name: input.account_name,
+      account_number: input.account_number,
+      bank_code: input.bank_code,
+      currency: PAYSTACK_CURRENCY,
+    }),
+    cache: "no-store",
+  });
+  const json = (await res.json()) as any;
+  if (!res.ok || !json?.data?.recipient_code) {
+    const msg = json?.message ?? `Paystack createTransferRecipient failed (HTTP ${res.status})`;
+    throw new Error(msg);
+  }
+  return { recipient_code: String(json.data.recipient_code) };
+}
+
+export interface InitiateTransferResult {
+  transfer_code: string;
+  status: string;
+  amountKobo: number;
+  reference: string;
+}
+
+/**
+ * Initiate a transfer from the platform's Paystack balance to a recipient.
+ * The transfer webhook (`transfer.success` / `transfer.failed`) is the source
+ * of truth — this call may return `status: "pending"` while Paystack processes.
+ *
+ * Idempotent at the reference level: Paystack will reject a duplicate
+ * reference, so use a deterministic `NAUB-PAYOUT-<booking_id>` for retries.
+ */
+export async function initiateTransfer(input: {
+  recipient_code: string;
+  amountKobo: number;
+  reference: string;
+  reason?: string;
+}): Promise<InitiateTransferResult> {
+  assertConfigured();
+  const res = await fetch(`${PAYSTACK_BASE}/transfer`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source: "balance",
+      amount: input.amountKobo,
+      recipient: input.recipient_code,
+      reference: input.reference,
+      reason: input.reason ?? "NAUB Home Finder escrow release",
+      currency: PAYSTACK_CURRENCY,
+    }),
+    cache: "no-store",
+  });
+  const json = (await res.json()) as any;
+  if (!res.ok || !json?.data?.transfer_code) {
+    // Paystack's error envelope: { status: false, message: "..." }
+    const msg = json?.message ?? `Paystack initiateTransfer failed (HTTP ${res.status})`;
+    const err: any = new Error(msg);
+    // Stash the raw envelope for the caller (so we can record payout_error).
+    err.paystack = json;
+    throw err;
+  }
+  return {
+    transfer_code: String(json.data.transfer_code),
+    status: String(json.data.status ?? "pending"),
+    amountKobo: Number(json.data.amount ?? input.amountKobo),
+    reference: String(json.data.reference ?? input.reference),
+  };
+}

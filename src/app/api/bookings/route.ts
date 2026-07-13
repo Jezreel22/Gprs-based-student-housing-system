@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse, errorResponse } from "@/lib/api";
+import { maybeReleaseDueBookings } from "@/lib/payout";
 import type { BookingDetail, LandlordSummary } from "@/api/generated/api.schemas";
 
 const CreateBookingBody = z.object({
@@ -21,6 +22,10 @@ function generateEscrowRef(): string {
 
 export async function GET(req: NextRequest) {
   try {
+    // Lazy escrow sweep — release any due bookings on each dashboard load.
+    // Self-healing, never throws (see payout.maybeReleaseDueBookings).
+    void maybeReleaseDueBookings();
+
     const me = await requireAuth(req);
 
     const rows = await db.select().from(bookingsTable)

@@ -4,10 +4,14 @@ import { db } from "@/lib/db";
 import { bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, jsonResponse, errorResponse } from "@/lib/api";
+import { maybeReleaseDueBookings } from "@/lib/payout";
 import type { BookingDetail, LandlordSummary } from "@/api/generated/api.schemas";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    // Lazy escrow sweep — release any due bookings when a booking is viewed.
+    void maybeReleaseDueBookings();
+
     const me = await requireAuth(req);
     const { id } = await params;
 
@@ -52,6 +56,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       dispute_status: booking.dispute_status ?? null,
       occupancy_verified_at: booking.occupancy_verified_at?.toISOString() ?? null,
       escrow_released_at: booking.escrow_released_at?.toISOString() ?? null,
+      // New escrow-release tracking fields (Phase: real Paystack escrow).
+      payout_transfer_reference: booking.payout_transfer_reference ?? null,
+      payout_initiated_at: booking.payout_initiated_at?.toISOString() ?? null,
+      payout_attempts: booking.payout_attempts ?? 0,
+      payout_error: booking.payout_error ?? null,
+      release_held_by_officer_at: booking.release_held_by_officer_at?.toISOString() ?? null,
       created_at: booking.created_at?.toISOString() ?? null,
       property: prop ? {
         id: prop.id,

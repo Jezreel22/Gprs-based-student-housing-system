@@ -295,6 +295,15 @@ export interface BookingDetail {
   /** @nullable */
   escrow_released_at?: string | null;
   /** @nullable */
+  payout_transfer_reference?: string | null;
+  /** @nullable */
+  payout_initiated_at?: string | null;
+  payout_attempts?: number;
+  /** @nullable */
+  payout_error?: string | null;
+  /** @nullable */
+  release_held_by_officer_at?: string | null;
+  /** @nullable */
   created_at?: string | null;
   property?: PropertySummary;
   student?: LandlordSummary;

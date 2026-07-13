@@ -21,8 +21,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2 } from "lucide-react";
+import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { customFetch } from "@/api/custom-fetch";
 
 function formatNGN(n?: number | null) {
   return n ? `₦${n.toLocaleString("en-NG")}` : "₦—";
@@ -41,6 +42,7 @@ export default function Admin() {
   const [adjDecision, setAdjDecision] = useState("dismissed");
   const [adjNotes, setAdjNotes] = useState("");
   const [adjRefundPct, setAdjRefundPct] = useState("");
+  const [escrowBusy, setEscrowBusy] = useState<string | null>(null);
   // Role gate (escrow-officer only). Render a gate until confirmed so the
   // admin shell — and its admin-only queries — never run for students/landlords.
   const [checked, setChecked] = useState(false);
@@ -65,6 +67,42 @@ export default function Admin() {
   const { data: pendingUsers = [], refetch: refetchUsers } = useQuery({ ...getGetPendingVerificationsQueryOptions(), enabled: allowed });
   const { data: pendingPropsData, refetch: refetchProps } = useQuery({ ...getGetPendingPropertiesQueryOptions(), enabled: allowed });
   const { data: disputes = [], refetch: refetchDisputes } = useQuery({ ...getGetDisputesQueryOptions(), enabled: allowed });
+  // Bookings awaiting escrow oversight (release / hold / retry).
+  const { data: escrowData, refetch: refetchEscrow } = useQuery<{ items: any[] }>({
+    queryKey: ["admin", "escrow-bookings"],
+    enabled: allowed,
+    queryFn: () => customFetch<{ items: any[] }>("/api/admin/bookings"),
+  });
+  const escrowBookings = (escrowData as any)?.items ?? [];
+
+  async function releaseEscrowNow(id: string) {
+    setEscrowBusy(id);
+    try {
+      const res = await customFetch<{ message: string }>(`/api/bookings/${id}/release-escrow`, { method: "POST" });
+      toast({ title: res.message ?? "Release initiated" });
+      refetchEscrow();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Release failed", description: e?.message ?? "Try again" });
+    } finally {
+      setEscrowBusy(null);
+    }
+  }
+
+  async function toggleHold(id: string, currentlyHeld: boolean) {
+    setEscrowBusy(id);
+    try {
+      await customFetch(`/api/bookings/${id}/hold-release`, {
+        method: "POST",
+        body: JSON.stringify({ release: currentlyHeld }),
+      });
+      toast({ title: currentlyHeld ? "Hold cleared" : "Release held" });
+      refetchEscrow();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Failed", description: e?.message ?? "Try again" });
+    } finally {
+      setEscrowBusy(null);
+    }
+  }
 
   const pendingProps = (pendingPropsData as any)?.data ?? [];
 
@@ -195,6 +233,9 @@ export default function Admin() {
             </TabsTrigger>
             <TabsTrigger value="disputes" className="rounded-lg px-4">
               Disputes {openDisputes.length > 0 && <Badge className="ml-2 bg-red-500 text-white text-xs">{openDisputes.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="escrow" className="rounded-lg px-4">
+              Escrow {escrowBookings.length > 0 && <Badge className="ml-2 bg-blue-500 text-white text-xs">{escrowBookings.length}</Badge>}
             </TabsTrigger>
           </TabsList>
 
@@ -375,6 +416,63 @@ export default function Admin() {
                             <Gavel className="h-3.5 w-3.5" /> Adjudicate
                           </Button>
                         )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ESCROW TAB */}
+          <TabsContent value="escrow">
+            {escrowBookings.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
+                <Wallet className="h-12 w-12 mx-auto mb-3 text-blue-500 opacity-60" />
+                <h3 className="font-semibold">Nothing to release</h3>
+                <p className="text-muted-foreground text-sm">No bookings are awaiting escrow release.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {escrowBookings.map((b: any) => {
+                  const status = b.booking_status;
+                  const color = status === "release_pending" ? "#1565C0" : status === "release_failed" ? "#C62828" : "#F57F17";
+                  return (
+                    <div key={b.id} className="bg-white rounded-2xl border border-[#EBEBEB] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge style={{ background: color + "20", color, border: "none" }} className="text-xs capitalize">
+                            {status.replace("_", " ")}
+                          </Badge>
+                          {b.release_held && (
+                            <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">On hold</Badge>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium truncate">{b.property_address ?? "Property"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatNGN(b.total_amount_ngn)} • Landlord: {b.landlord_name ?? "—"} • Student: {b.student_name ?? "—"}
+                        </p>
+                        {b.payout_error && (
+                          <p className="text-xs text-red-600 mt-1">Last error: {b.payout_error}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <Button
+                          size="sm"
+                          disabled={escrowBusy === b.id}
+                          onClick={() => releaseEscrowNow(b.id)}
+                          style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+                        >
+                          {escrowBusy === b.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Release now"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={escrowBusy === b.id}
+                          onClick={() => toggleHold(b.id, b.release_held)}
+                        >
+                          {b.release_held ? "Clear hold" : "Hold"}
+                        </Button>
                       </div>
                     </div>
                   );

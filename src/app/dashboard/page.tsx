@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getGetMyPropertiesQueryOptions, getGetBookingsQueryOptions, usePublishProperty, useDeleteProperty } from "@/api";
 import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
+import PayoutDetailsCard from "@/components/PayoutDetailsCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -189,7 +190,9 @@ export default function Dashboard() {
 
         {/* LANDLORD/AGENT VIEW */}
         {isLandlord && (
-          <Tabs defaultValue="listings" className="space-y-6">
+          <div className="space-y-6">
+            <PayoutDetailsCard />
+            <Tabs defaultValue="listings" className="space-y-6">
             <TabsList className="bg-white border border-[#EBEBEB] h-auto p-1 rounded-xl">
               <TabsTrigger value="listings" className="rounded-lg px-5">My Listings ({properties.length})</TabsTrigger>
               <TabsTrigger value="bookings" className="rounded-lg px-5">Bookings ({bookings.length})</TabsTrigger>
@@ -285,6 +288,7 @@ export default function Dashboard() {
               )}
             </TabsContent>
           </Tabs>
+          </div>
         )}
 
         {/* STUDENT VIEW */}
