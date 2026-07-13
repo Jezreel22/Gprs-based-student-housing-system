@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel } from "lucide-react";
+import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function formatNGN(n?: number | null) {
@@ -41,6 +41,10 @@ export default function Admin() {
   const [adjDecision, setAdjDecision] = useState("dismissed");
   const [adjNotes, setAdjNotes] = useState("");
   const [adjRefundPct, setAdjRefundPct] = useState("");
+  // Role gate (escrow-officer only). Render a gate until confirmed so the
+  // admin shell — and its admin-only queries — never run for students/landlords.
+  const [checked, setChecked] = useState(false);
+  const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("naub_token");
@@ -54,15 +58,13 @@ export default function Admin() {
       localStorage.removeItem("naub_user");
     }
     if (!user) { router.push("/login"); return; }
-    if (user.role !== "escrow_officer") {
-      toast({ variant: "destructive", title: "Admin access required" });
-      router.push("/dashboard");
-    }
-  }, [router, toast]);
+    setAllowed(user.role === "escrow_officer");
+    setChecked(true);
+  }, [router]);
 
-  const { data: pendingUsers = [], refetch: refetchUsers } = useQuery(getGetPendingVerificationsQueryOptions());
-  const { data: pendingPropsData, refetch: refetchProps } = useQuery(getGetPendingPropertiesQueryOptions());
-  const { data: disputes = [], refetch: refetchDisputes } = useQuery(getGetDisputesQueryOptions());
+  const { data: pendingUsers = [], refetch: refetchUsers } = useQuery({ ...getGetPendingVerificationsQueryOptions(), enabled: allowed });
+  const { data: pendingPropsData, refetch: refetchProps } = useQuery({ ...getGetPendingPropertiesQueryOptions(), enabled: allowed });
+  const { data: disputes = [], refetch: refetchDisputes } = useQuery({ ...getGetDisputesQueryOptions(), enabled: allowed });
 
   const pendingProps = (pendingPropsData as any)?.data ?? [];
 
@@ -124,6 +126,35 @@ export default function Admin() {
 
   const openDisputes = (disputes as any[]).filter(d => ["open", "under_investigation"].includes(d.dispute_status));
   const resolvedDisputes = (disputes as any[]).filter(d => ["resolved", "closed"].includes(d.dispute_status));
+
+  if (!checked) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F7]">
+        <NavBar />
+        <div className="max-w-5xl mx-auto px-4 py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!allowed) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F7]">
+        <NavBar />
+        <div className="max-w-xl mx-auto px-4 py-16 text-center">
+          <div className="text-5xl mb-4">🛡️</div>
+          <h1 className="text-2xl font-bold mb-2">Admin only</h1>
+          <p className="text-muted-foreground mb-6">
+            This area is for escrow officers. If you reached this by mistake, head back to your dashboard.
+          </p>
+          <Link href="/dashboard">
+            <Button style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>Back to dashboard</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F7F7]">

@@ -134,8 +134,7 @@ export default function Home() {
             <span style={{ color: "#FF5A5F" }}>Student Home</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl mb-10">
-            Browse hundreds of verified, affordable listings near Nigerian Army University Biu.
-            Safe, transparent, and built for students.
+            Browse verified, affordable listings near Nigerian Army University Biu.
           </p>
 
           {/* Search bar */}
@@ -239,7 +238,7 @@ export default function Home() {
               <div className="text-5xl mb-4">🏠</div>
               <h3 className="text-lg font-semibold mb-2">Listings coming soon</h3>
               <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-                Landlords are setting up their profiles. Check back soon or be the first to list.
+                No listings yet — check back soon or be the first to list.
               </p>
               {user && ["landlord", "agent"].includes(user.role ?? "") && (
                 <Link href="/properties/new">

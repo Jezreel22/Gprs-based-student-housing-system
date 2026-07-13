@@ -55,6 +55,11 @@ export default function ListProperty() {
   const [createdPropertyId, setCreatedPropertyId] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>([""]);
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  // Role gate: don't render the form until we've confirmed the user is a
+  // landlord/agent. Students otherwise see the form, hit a 403 on create, and
+  // get a confusing "amenities step error". Render an access-denied panel instead.
+  const [checked, setChecked] = useState(false);
+  const [allowed, setAllowed] = useState(false);
 
   async function uploadPhoto(idx: number, file: File) {
     setUploadingIdx(idx);
@@ -96,11 +101,9 @@ export default function ListProperty() {
       localStorage.removeItem("naub_user");
     }
     if (!user) { router.push("/login"); return; }
-    if (!["landlord", "agent"].includes(user.role ?? "")) {
-      toast({ variant: "destructive", title: "Only landlords and agents can list properties" });
-      router.push("/dashboard");
-    }
-  }, [router, toast]);
+    setAllowed(["landlord", "agent"].includes(user.role ?? ""));
+    setChecked(true);
+  }, [router]);
 
   const form1 = useForm<z.infer<typeof step1Schema>>({
     resolver: zodResolver(step1Schema),
@@ -115,7 +118,9 @@ export default function ListProperty() {
   const handleStep1 = async (values: z.infer<typeof step1Schema>) => {
     if (createdPropertyId) { setCurrentStep(1); return; }
 
-    createMutation.mutate({ data: { ...values, amenities: selectedAmenities } }, {
+    // Amenities/description/house_rules are step-2 fields — don't send them
+    // (empty) here; they're persisted via PUT in handleStep2.
+    createMutation.mutate({ data: values }, {
       onSuccess: (data) => {
         setCreatedPropertyId(data.id ?? null);
         toast({ title: "Property created!", description: "Now add your description and amenities." });
@@ -129,7 +134,21 @@ export default function ListProperty() {
 
   const handleStep2 = async (values: z.infer<typeof step2Schema>) => {
     if (!createdPropertyId) return;
-    setCurrentStep(2);
+    // Persist the step-2 fields (description, house rules, amenities) that
+    // weren't part of the initial create. Without this they were silently dropped.
+    try {
+      await customFetch(`/api/properties/${createdPropertyId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          description: values.description,
+          house_rules: values.house_rules ?? "",
+          amenities: selectedAmenities,
+        }),
+      });
+      setCurrentStep(2);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Failed to save details", description: e?.message ?? "Please try again" });
+    }
   };
 
   const handlePublish = async () => {
@@ -157,6 +176,39 @@ export default function ListProperty() {
   const toggleAmenity = (key: string) => {
     setSelectedAmenities(prev => ({ ...prev, [key]: !prev[key] }));
   };
+
+  // Page-level role guard: never show the wizard to a student/visitor.
+  // Checking localStorage runs in a useEffect, so we render a spinner first
+  // (no form, no interactive chrome) until we know the role; non-landlords get
+  // a clear "Landlords only" panel instead of the form (which would just 403).
+  if (!checked) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F7]">
+        <NavBar />
+        <div className="max-w-2xl mx-auto px-4 py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!allowed) {
+    return (
+      <div className="min-h-screen bg-[#F7F7F7]">
+        <NavBar />
+        <div className="max-w-xl mx-auto px-4 py-16 text-center">
+          <div className="text-5xl mb-4">🔒</div>
+          <h1 className="text-2xl font-bold mb-2">Landlords only</h1>
+          <p className="text-muted-foreground mb-6">
+            Listing properties is for landlord and agent accounts. Sign up as a landlord to list a property.
+          </p>
+          <Link href="/dashboard">
+            <Button style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>Back to dashboard</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F7F7]">

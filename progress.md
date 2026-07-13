@@ -326,3 +326,25 @@ Two `pnpm db:*` scripts were broken after the standalone restructure:
 
 Verified: `db:push` (no changes), `db:seed` (complete), `db:migrate` (complete),
 `typecheck` clean, dev server healthy.
+
+## Cloud database (Supabase) — 2026-07-11
+
+The Vercel deploy was 500ing on login/register because `DATABASE_URL` pointed
+at `localhost` (naub-pg), unreachable from Vercel's servers. The auth code was
+fine — verified login 200 / register 201 against localhost.
+
+Fix: provisioned a cloud Postgres on Supabase (project `naub-homefinder`,
+ref `wuzpmedipdcuwvpazxzy`, region eu-central-1) via the Supabase CLI + a
+personal access token. Pushed the schema (`drizzle-kit push --force`) and
+seeded the test users + property. `.env.local` now points at the Supabase
+**session pooler** (IPv4, port 5432, user `postgres.<ref>`). The direct host
+`db.<ref>.supabase.co` is IPv6-only and unreachable on networks without IPv6,
+so the pooler is used for both local dev and Vercel.
+
+Verified end-to-end against the cloud DB: register 201, login 200, booking
+creation + initialize-payment, and the booking row confirmed on Supabase.
+
+To deploy: copy `DATABASE_URL` / `JWT_SECRET` / `PAYSTACK_SECRET_KEY` /
+`NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` from `.env.local` into Vercel → Settings →
+Environment Variables, set `NEXT_PUBLIC_APP_URL` to the Vercel URL, redeploy.
+No `vercel.json` needed — the standalone Next.js project auto-detects.
