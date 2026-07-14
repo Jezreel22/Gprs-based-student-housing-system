@@ -163,7 +163,12 @@ export async function POST(req: NextRequest) {
           latitude: body.latitude ?? null,
           longitude: body.longitude ?? null,
           occupancy_code: generateOccupancyCode(),
-          listing_status: "draft",
+          // Auto-publish: a freshly created listing is immediately live so it
+          // shows up on the landing page and in search. (The officer-review
+          // gate can be added later if needed; right now the trust control is
+          // KYC verification on the landlord, not per-listing approval.)
+          listing_status: "live",
+          published_at: new Date(),
         }).returning();
 
         if (!property) {

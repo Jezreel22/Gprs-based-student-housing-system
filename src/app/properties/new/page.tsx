@@ -44,7 +44,7 @@ const AMENITY_OPTIONS = [
   { key: "air_conditioning", label: "Air Conditioning" },
 ];
 
-const STEPS = ["Basic Info", "Description & Amenities", "Photos & Publish"];
+const STEPS = ["Basic Info", "Description & Amenities", "Photos"];
 
 export default function ListProperty() {
   const router = useRouter();
@@ -78,7 +78,6 @@ export default function ListProperty() {
       setUploadingIdx(null);
     }
   }
-  const [selectedAmenities, setSelectedAmenities] = useState<Record<string, boolean>>({});
 
   const createMutation = useCreateProperty();
   const photoMutation = useAddPropertyPhotos();
@@ -110,7 +109,7 @@ export default function ListProperty() {
 
   const form2 = useForm<z.infer<typeof step2Schema>>({
     resolver: zodResolver(step2Schema),
-    defaultValues: { description: "", house_rules: "" },
+    defaultValues: { description: "", house_rules: "", amenities: {} as Record<string, boolean> },
   });
 
   const handleStep1 = async (values: z.infer<typeof step1Schema>) => {
@@ -140,7 +139,7 @@ export default function ListProperty() {
         body: JSON.stringify({
           description: values.description,
           house_rules: values.house_rules ?? "",
-          amenities: selectedAmenities,
+          amenities: values.amenities ?? {},
         }),
       });
       setCurrentStep(2);
@@ -160,19 +159,15 @@ export default function ListProperty() {
       }).catch(() => {});
     }
 
-    publishMutation.mutate({ id: createdPropertyId }, {
-      onSuccess: () => {
-        toast({ title: "Listing published! 🎉", description: "Your property is now live and visible to students." });
-        router.push("/dashboard");
-      },
-      onError: (e: any) => {
-        toast({ variant: "destructive", title: "Failed to submit", description: e.message });
-      },
-    });
+    // Listings auto-publish on create, so step 3 is just "finish" — send
+    // the landlord to the live listing page.
+    toast({ title: "Listing is live! 🎉", description: "Students can find and book it from the landing and browse pages." });
+    router.push(`/properties/${createdPropertyId}`);
   };
 
   const toggleAmenity = (key: string) => {
-    setSelectedAmenities(prev => ({ ...prev, [key]: !prev[key] }));
+    const current = form2.getValues("amenities") ?? {};
+    form2.setValue("amenities", { ...current, [key]: !current[key] });
   };
 
   // Page-level role guard: never show the wizard to a student/visitor.
@@ -358,7 +353,7 @@ export default function ListProperty() {
                     {AMENITY_OPTIONS.map(({ key, label }) => (
                       <label key={key} className="flex items-center gap-2 p-3 border border-[#EBEBEB] rounded-lg hover:bg-[#F7F7F7] cursor-pointer">
                         <Checkbox
-                          checked={!!selectedAmenities[key]}
+                          checked={!!(form2.watch("amenities") as Record<string, boolean>)?.[key]}
                           onCheckedChange={() => toggleAmenity(key)}
                         />
                         <span className="text-sm">{label}</span>
@@ -388,7 +383,7 @@ export default function ListProperty() {
             </Form>
           )}
 
-          {/* STEP 2: Photos & Publish */}
+          {/* STEP 2: Photos */}
           {currentStep === 2 && (
             <div className="space-y-6">
               <div>
@@ -457,7 +452,7 @@ export default function ListProperty() {
 
               <div className="bg-[#F7F7F7] rounded-xl p-4 text-sm text-muted-foreground">
                 <p className="font-medium text-foreground mb-1">📋 What happens next?</p>
-                <p>Once you publish, your listing goes live immediately — students can find and book it right away from the landing page and browse page.</p>
+                <p>Your listing is already live — students can find and book it from the landing page and the browse page. You can edit or remove it later from your dashboard.</p>
               </div>
 
               <div className="flex gap-3">
@@ -469,9 +464,9 @@ export default function ListProperty() {
                   className="flex-1 gap-2"
                   style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
                   onClick={handlePublish}
-                  disabled={publishMutation.isPending || photoMutation.isPending}
+                  disabled={photoMutation.isPending || uploadingIdx !== null}
                 >
-                  {publishMutation.isPending ? "Publishing..." : "Publish Listing 🚀"}
+                  Finish · View Listing →
                 </Button>
               </div>
             </div>
