@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { getGetMyPropertiesQueryOptions, getGetBookingsQueryOptions, usePublishProperty, useDeleteProperty } from "@/api";
+import { getGetMyPropertiesQueryOptions, getGetBookingsQueryOptions, usePublishProperty, useDeleteProperty, useUpdateProperty } from "@/api";
 import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
 import PayoutDetailsCard from "@/components/PayoutDetailsCard";
@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Home, Plus, ShieldCheck, ShieldAlert, Calendar, Clock,
-  CheckCircle, AlertCircle, Lock, ArrowRight
+  CheckCircle, AlertCircle, Lock, ArrowRight, MessageSquare
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -64,6 +64,7 @@ export default function Dashboard() {
 
   const publishMutation = usePublishProperty();
   const deleteMutation = useDeleteProperty();
+  const updateMutation = useUpdateProperty();
 
   const handleLogout = () => {
     localStorage.removeItem("naub_token");
@@ -77,6 +78,19 @@ export default function Dashboard() {
       onSuccess: () => toast({ title: "Listing published", description: "Your property is now live and visible to students." }),
       onError: () => toast({ variant: "destructive", title: "Failed to publish" }),
     });
+  };
+
+  const handleUnpublish = (id: string) => {
+    // Soft-remove: the listing stays in our records (so booking history and
+    // escrow audit trails are preserved) but disappears from the public
+    // landing + browse pages.
+    updateMutation.mutate(
+      { id, data: { listing_status: "draft" as any } },
+      {
+        onSuccess: () => toast({ title: "Listing unpublished", description: "Students can no longer see or book this property." }),
+        onError: (e: any) => toast({ variant: "destructive", title: "Couldn't unpublish", description: e?.message ?? "Please try again" }),
+      },
+    );
   };
 
   const handleDelete = (id: string) => {
@@ -221,21 +235,21 @@ export default function Dashboard() {
                       <PropertyCard property={p} />
                       {/* Action buttons overlaid below card */}
                       <div className="flex gap-2 mt-2">
-                        {p.listing_status === "draft" && (
+                        {p.listing_status === "live" && (
                           <Button
                             size="sm"
+                            variant="outline"
                             className="flex-1 text-xs"
-                            style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
-                            onClick={() => handlePublish(p.id)}
-                            disabled={publishMutation.isPending}
+                            onClick={() => handleUnpublish(p.id)}
+                            disabled={updateMutation.isPending || publishMutation.isPending}
                           >
-                            Publish
+                            Unpublish
                           </Button>
                         )}
                         <Link href={`/properties/${p.id}`} className="flex-1">
                           <Button size="sm" variant="outline" className="w-full text-xs">View</Button>
                         </Link>
-                        {p.listing_status === "draft" && (
+                        {p.listing_status !== "live" && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -279,6 +293,13 @@ export default function Dashboard() {
                           <Badge style={{ background: status.color + "20", color: status.color, border: "none" }} className="text-xs">
                             {status.label}
                           </Badge>
+                          {b.student?.id && (
+                            <Link href={`/messages/${b.student.id}`}>
+                              <Button size="sm" variant="ghost" className="text-xs gap-1">
+                                <MessageSquare className="h-3 w-3" /> Message
+                              </Button>
+                            </Link>
+                          )}
                           <Link href={`/bookings/${b.id}`}>
                             <Button size="sm" variant="outline" className="text-xs gap-1">
                               View <ArrowRight className="h-3 w-3" />

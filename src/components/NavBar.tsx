@@ -12,6 +12,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Menu, User, LogOut, LayoutDashboard, Home, PlusCircle, MessageSquare, Shield } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+
+// Human-readable role labels + colors for the avatar chip.
+const ROLE_META: Record<string, { label: string; bg: string; fg: string }> = {
+  student:        { label: "Student",        bg: "#DBEAFE", fg: "#1D4ED8" },
+  landlord:       { label: "Landlord",       bg: "#DCFCE7", fg: "#15803D" },
+  agent:          { label: "Agent",          bg: "#DCFCE7", fg: "#15803D" },
+  escrow_officer: { label: "Escrow Officer", bg: "#FEF3C7", fg: "#B45309" },
+};
+
+function RoleChip({ role, className = "" }: { role: string; className?: string }) {
+  const meta = ROLE_META[role] ?? { label: role, bg: "#E5E7EB", fg: "#374151" };
+  return (
+    <Badge
+      className={`border-0 font-medium ${className}`}
+      style={{ background: meta.bg, color: meta.fg }}
+    >
+      {meta.label}
+    </Badge>
+  );
+}
 import Logo from "./Logo";
 
 interface StoredUser {
@@ -128,12 +149,19 @@ export default function NavBar() {
                        style={{ background: "#FF5A5F" }}>
                     {user.first_name?.[0]?.toUpperCase() ?? user.email[0]?.toUpperCase() ?? "U"}
                   </div>
-                  <span className="hidden sm:block text-sm font-medium">{user.first_name ?? "Account"}</span>
+                  <div className="hidden sm:flex items-center gap-2">
+                    <span className="text-sm font-medium">{user.first_name ?? "Account"}</span>
+                    <RoleChip role={user.role} />
+                  </div>
+                  <RoleChip role={user.role} className="sm:hidden" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <div className="px-2 py-2 border-b border-[#EBEBEB]">
-                  <p className="text-sm font-semibold">{user.first_name} {user.last_name}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold truncate">{user.first_name} {user.last_name}</p>
+                    <RoleChip role={user.role} />
+                  </div>
                   <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                 </div>
                 <DropdownMenuItem onClick={() => router.push("/dashboard")}>
