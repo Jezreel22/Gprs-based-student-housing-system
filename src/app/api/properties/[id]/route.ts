@@ -149,6 +149,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return errorResponse("Not your listing", 403);
     }
 
+    // A property with bookings can't be hard-deleted — bookings (and their
+    // escrow/audit trail) reference it and must be preserved. Photos cascade,
+    // so a listing with no bookings deletes cleanly.
+    const related = await db.select({ id: bookingsTable.id }).from(bookingsTable).where(eq(bookingsTable.property_id, id)).limit(1);
+    if (related.length > 0) {
+      return errorResponse(
+        "This property has bookings and can't be deleted. Unpublish it instead to keep the booking history.",
+        409,
+      );
+    }
+
     await db.delete(propertiesTable).where(eq(propertiesTable.id, id));
     return jsonResponse({ message: "Listing removed" });
   } catch (err) {

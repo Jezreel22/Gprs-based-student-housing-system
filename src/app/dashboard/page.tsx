@@ -82,7 +82,11 @@ export default function Dashboard() {
   const handleDelete = (id: string) => {
     deleteMutation.mutate({ id }, {
       onSuccess: () => toast({ title: "Listing removed" }),
-      onError: () => toast({ variant: "destructive", title: "Failed to remove listing" }),
+      onError: (e: any) => toast({
+        variant: "destructive",
+        title: "Couldn't delete listing",
+        description: e?.message ?? "It may have existing bookings — try unpublishing it instead.",
+      }),
     });
   };
 

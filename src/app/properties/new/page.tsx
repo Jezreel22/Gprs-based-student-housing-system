@@ -25,8 +25,6 @@ const step1Schema = z.object({
   deposit_amount_ngn: z.number({ coerce: true }).int().positive("Deposit must be a positive amount"),
   rooms: z.number({ coerce: true }).int().min(1).max(20),
   lease_duration_days: z.number({ coerce: true }).int().min(30).optional(),
-  latitude: z.number({ coerce: true }).optional(),
-  longitude: z.number({ coerce: true }).optional(),
 });
 
 const step2Schema = z.object({
@@ -323,25 +321,6 @@ export default function ListProperty() {
                   )} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form1.control} name="latitude" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Latitude (optional)</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="any" placeholder="e.g. 10.6110" {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )} />
-                  <FormField control={form1.control} name="longitude" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Longitude (optional)</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="any" placeholder="e.g. 12.1909" {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )} />
-                </div>
-
                 <Button
                   type="submit"
                   className="w-full gap-2"
@@ -377,15 +356,13 @@ export default function ListProperty() {
                   <Label className="text-sm font-semibold mb-3 block">Amenities</Label>
                   <div className="grid grid-cols-2 gap-3">
                     {AMENITY_OPTIONS.map(({ key, label }) => (
-                      <div key={key} className="flex items-center gap-2 p-3 border border-[#EBEBEB] rounded-lg hover:bg-[#F7F7F7] cursor-pointer"
-                           onClick={() => toggleAmenity(key)}>
+                      <label key={key} className="flex items-center gap-2 p-3 border border-[#EBEBEB] rounded-lg hover:bg-[#F7F7F7] cursor-pointer">
                         <Checkbox
-                          id={key}
                           checked={!!selectedAmenities[key]}
                           onCheckedChange={() => toggleAmenity(key)}
                         />
-                        <label htmlFor={key} className="text-sm cursor-pointer">{label}</label>
-                      </div>
+                        <span className="text-sm">{label}</span>
+                      </label>
                     ))}
                   </div>
                 </div>
