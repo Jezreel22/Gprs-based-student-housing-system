@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import AvatarUploader from "@/components/AvatarUploader";
 import {
   CheckCircle, Upload, Camera, FileText, CreditCard, Building, Landmark,
   ChevronRight, RefreshCw, AlertCircle, ShieldCheck, Lock
@@ -590,6 +591,19 @@ export default function KYC() {
               <div className="mb-2">
                 <h2 className="text-lg font-bold">Review & Submit</h2>
                 <p className="text-sm text-muted-foreground mt-1">Confirm everything looks correct before submitting</p>
+              </div>
+
+              {/* Optional profile photo — lands on the dashboard avatar / NavBar
+                  and shows up on listings/messages immediately. Separate from
+                  the KYC face check, which is for verification only. */}
+              <div className="rounded-xl border border-[#EBEBEB] p-4 flex items-center gap-4">
+                <AvatarUploader user={user} size={72} hint="Update your visible profile photo" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">Profile Photo</p>
+                  <p className="text-xs text-muted-foreground">
+                    This is what other users see next to your name on listings and in messages.
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-3">

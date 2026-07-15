@@ -58,7 +58,10 @@ export default function Login() {
 
   function onSubmit(values: LoginForm) {
     loginMutation.mutate(
-      { data: values },
+      // Send the selected tab so the server can reject a landlord email on the
+      // Student tab (and vice-versa). `role` is guaranteed non-null here — the
+      // form only renders after a tab is picked.
+      { data: { ...values, role: role ?? "student" } },
       {
         onSuccess: (res) => onSuccess(res.token, res.user),
         onError: (err) => {

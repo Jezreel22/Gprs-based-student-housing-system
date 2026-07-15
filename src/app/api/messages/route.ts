@@ -5,7 +5,10 @@ import { db } from "@/lib/db";
 import { messagesTable, usersTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse } from "@/lib/api";
+import { createNotification } from "@/lib/notify";
 import type { ConversationPreview } from "@/api/generated/api.schemas";
+
+const TRUNC = 120;
 
 const SendMessageBody = z.object({
   recipient_id: z.string().uuid(),
@@ -64,6 +67,7 @@ export async function GET(req: NextRequest) {
           last_name: otherUser.last_name,
           role: otherUser.role,
           verification_status: otherUser.verification_status,
+          profile_photo_url: otherUser.profile_photo_url ?? null,
           average_rating: null,
         } : undefined,
         last_message: conv[0]?.message_text ?? "",
@@ -90,6 +94,22 @@ export async function POST(req: NextRequest) {
       message_text: body.message_text,
       message_type: "text",
     }).returning();
+
+    // Fan-out a notification for the recipient so the bell icon + global
+    // toast-on-new can surface incoming messages even when the recipient is
+    // not on the messages page. Best-effort — never fail the send because of
+    // a notifications hiccup.
+    const preview = body.message_text.length > TRUNC
+      ? body.message_text.slice(0, TRUNC - 1) + "…"
+      : body.message_text;
+    await createNotification({
+      userId: body.recipient_id,
+      type: "message",
+      title: "New message",
+      body: preview,
+      relatedId: msg.id,
+      relatedType: "message",
+    });
 
     return jsonResponse(msg, { status: 201 });
   } catch (err) {

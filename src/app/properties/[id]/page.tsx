@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getGetPropertyQueryOptions } from "@/api";
 import NavBar from "@/components/NavBar";
 import TrustBadge from "@/components/TrustBadge";
+import Avatar from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -327,10 +328,7 @@ export default function PropertyDetail() {
                     <div key={r.id} className="border-b border-[#EBEBEB] last:border-0 pb-4 last:pb-0">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2.5">
-                          <div className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
-                               style={{ background: "#FF5A5F" }}>
-                            {r.rater?.first_name?.[0] ?? "?"}
-                          </div>
+                          <Avatar user={r.rater} size={36} />
                           <div>
                             <p className="text-sm font-semibold">{r.rater?.first_name} {r.rater?.last_name}</p>
                             <p className="text-xs text-muted-foreground">{r.created_at ? new Date(r.created_at).toLocaleDateString("en-NG", { month: "short", year: "numeric" }) : ""}</p>
@@ -429,10 +427,7 @@ export default function PropertyDetail() {
                   <div className="px-5 pt-5 pb-4">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Listed by</p>
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0"
-                           style={{ background: "#FF5A5F" }}>
-                        {landlord.first_name?.[0] ?? "L"}
-                      </div>
+                      <Avatar user={landlord} size={44} />
                       <div>
                         <p className="font-semibold text-sm">{landlord.first_name} {landlord.last_name}</p>
                         <p className="text-xs text-muted-foreground capitalize">{landlord.role}</p>

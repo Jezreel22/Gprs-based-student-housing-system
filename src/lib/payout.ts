@@ -2,6 +2,12 @@ import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookingsTable, usersTable, auditLogTable } from "@/lib/db/schema";
 import { amountToKobo, initiateTransfer } from "@/lib/paystack-server";
+import { createNotification } from "@/lib/notify";
+
+function formatNGN(n?: number | null): string {
+  if (!n) return "₦0";
+  return `₦${n.toLocaleString("en-NG")}`;
+}
 
 /**
  * Escrow release + lazy auto-release helpers.
@@ -135,6 +141,29 @@ export async function releaseBookingEscrow(
         reason: opts.reason ?? (opts.force ? "officer_override" : "review_window"),
       },
     });
+
+    // Fan-out notifications for both parties. Best-effort — a notify failure
+    // never fails the transfer.
+    const amount = formatNGN(booking.total_amount_ngn);
+    await Promise.all([
+      createNotification({
+        userId: landlord.id,
+        type: "escrow_release",
+        title: "Escrow released",
+        body: `${amount} is on its way to your bank account.`,
+        relatedId: booking.id,
+        relatedType: "booking",
+      }),
+      createNotification({
+        userId: booking.student_id,
+        type: "system",
+        title: "Escrow released to landlord",
+        body: `${amount} has been transferred to the landlord for your booking.`,
+        relatedId: booking.id,
+        relatedType: "booking",
+      }),
+    ]);
+
     return { idempotent: false, reference };
   } catch (e: any) {
     const msg = e?.paystack?.message ?? e?.message ?? "Transfer failed";
@@ -153,6 +182,17 @@ export async function releaseBookingEscrow(
       resource_id: booking.id,
       details: { reference, error: msg, actor: opts.actorId },
     });
+
+    // Tell the landlord so they (and the officer) see the failure surfaced.
+    await createNotification({
+      userId: landlord.id,
+      type: "system",
+      title: "Payout needs attention",
+      body: "Your escrow release didn't go through. An officer will retry shortly.",
+      relatedId: booking.id,
+      relatedType: "booking",
+    });
+
     throw new PayoutError("transfer_failed", msg);
   }
 }

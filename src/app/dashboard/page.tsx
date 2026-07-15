@@ -8,18 +8,20 @@ import { getGetMyPropertiesQueryOptions, getGetBookingsQueryOptions, usePublishP
 import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
 import PayoutDetailsCard from "@/components/PayoutDetailsCard";
+import AvatarUploader from "@/components/AvatarUploader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Home, Plus, ShieldCheck, ShieldAlert, Calendar, Clock,
-  CheckCircle, AlertCircle, Lock, ArrowRight, MessageSquare
+  CheckCircle, AlertCircle, Lock, ArrowRight, MessageSquare, CreditCard
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface StoredUser {
   id: string; email: string; role: string;
   first_name?: string; last_name?: string;
+  profile_photo_url?: string | null;
   verification_status?: string;
 }
 
@@ -114,9 +116,10 @@ export default function Dashboard() {
   const properties = myProperties?.data ?? [];
   const bookings = (myBookings ?? []) as any[];
 
-  // For students: active/recent bookings
+  // For students: active/recent bookings (also flag unpaid bookings so the
+  // dashboard can prompt the student to complete payment).
   const activeBooking = isStudent ? bookings.find((b: any) =>
-    ["pending_occupancy", "pending_review", "disputed"].includes(b.booking_status)
+    ["pending_payment", "pending_occupancy", "pending_review", "disputed"].includes(b.booking_status)
   ) : null;
 
   return (
@@ -126,11 +129,17 @@ export default function Dashboard() {
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Welcome back, {user.first_name ?? user.email.split("@")[0]}! 👋
-            </h1>
-            <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-4">
+            <AvatarUploader
+              user={user}
+              size={80}
+              hint="Tap to update photo"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">
+                Welcome back, {user.first_name ?? user.email.split("@")[0]}! 👋
+              </h1>
+              <div className="flex items-center gap-2 mt-1">
               <span className="text-sm text-muted-foreground capitalize">
                 {user.role.replace("_", " ")}
               </span>
@@ -148,6 +157,7 @@ export default function Dashboard() {
                 )
               )}
             </div>
+          </div>
           </div>
           <div className="flex items-center gap-2">
             {isLandlord && (
@@ -192,6 +202,13 @@ export default function Dashboard() {
                 <Link href={`/bookings/${activeBooking.id}`}>
                   <Button style={{ background: "#FF5A5F", color: "#fff", border: "none" }} className="gap-2 shrink-0">
                     <Lock className="h-4 w-4" /> Enter Occupancy Code
+                  </Button>
+                </Link>
+              )}
+              {activeBooking.booking_status === "pending_payment" && (
+                <Link href={`/bookings/${activeBooking.id}`}>
+                  <Button style={{ background: "#FF5A5F", color: "#fff", border: "none" }} className="gap-2 shrink-0">
+                    <CreditCard className="h-4 w-4" /> Complete Payment
                   </Button>
                 </Link>
               )}

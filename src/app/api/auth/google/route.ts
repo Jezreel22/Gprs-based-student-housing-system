@@ -68,6 +68,16 @@ export async function POST(req: NextRequest) {
       return jsonResponse({ error: "Account suspended" }, { status: 403 });
     }
 
+    // If the caller asked for a specific tab role, the existing account must
+    // match it — a landlord who signs in via Google through the Student tab is
+    // rejected just like the password flow. (The client only offers Google on
+    // the Student tab, so this is mostly defense in depth.)
+    if (body.role && user.role !== body.role) {
+      return jsonResponse({
+        error: `This Google account is registered as ${user.role}, not ${body.role}.`,
+      }, { status: 403 });
+    }
+
     const token = signToken({ sub: user.id, role: user.role, email: user.email });
     const response: AuthResponse = {
       message: "Authenticated",

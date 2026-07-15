@@ -6,12 +6,35 @@ import { db } from "@/lib/db";
 import { usersTable } from "@/lib/db/schema";
 import { signToken } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse } from "@/lib/api";
+import { createNotification } from "@/lib/notify";
 import type { AuthResponse } from "@/api/generated/api.schemas";
 
 const LoginBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  // The login screen picks a tab (Student / Landlord) before entering
+  // credentials. We enforce it here so a landlord email can't sign in through
+  // the Student tab (or vice-versa) — the role picker must match the account.
+  role: z.enum(["student", "landlord"]).optional(),
 });
+
+// Human-readable role labels for error messages.
+function roleLabel(role: string): string {
+  switch (role) {
+    case "student":        return "a student";
+    case "landlord":       return "a landlord";
+    case "agent":          return "an agent (landlord)";
+    case "escrow_officer": return "an escrow officer";
+    default:               return role;
+  }
+}
+
+// Which stored roles are allowed for a given login tab. The "landlord" tab
+// also accepts agents — they list properties and set payouts the same way.
+function roleMatches(loginRole: "student" | "landlord", actualRole: string): boolean {
+  if (loginRole === "student") return actualRole === "student";
+  return actualRole === "landlord" || actualRole === "agent";
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,7 +54,27 @@ export async function POST(req: NextRequest) {
       return jsonResponse({ error: "Account suspended" }, { status: 403 });
     }
 
+    // Enforce the login tab matches the account's actual role. We check this
+    // AFTER the password so a wrong-tab attempt never leaks whether the email
+    // exists (same "Invalid credentials"-style 401 surface).
+    if (body.role && !roleMatches(body.role, user.role)) {
+      const wantedTab = body.role === "student" ? "Student" : "Landlord";
+      return jsonResponse({
+        error: `This email is registered as ${roleLabel(user.role)} account, not ${roleLabel(body.role)} account. Use the ${wantedTab} tab to sign in.`,
+      }, { status: 403 });
+    }
+
     const token = signToken({ sub: user.id, role: user.role, email: user.email });
+
+    // Persist a "login" notification so the bell icon shows new-device
+    // sign-ins. Best-effort — never block the response on it.
+    await createNotification({
+      userId: user.id,
+      type: "login",
+      title: "New login to your account",
+      body: `Signed in as ${user.email}`,
+    });
+
     const response: AuthResponse = {
       message: "Logged in",
       user: {

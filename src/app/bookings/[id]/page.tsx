@@ -60,8 +60,10 @@ function BookingPage() {
   const propertyId = isNewBooking ? (propertyIdParam ?? "") : "";
 
   const [user, setUser] = useState<{ id: string; role: string } | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
     try { setUser(JSON.parse(localStorage.getItem("naub_user") ?? "null")); } catch { setUser(null); }
+    setHydrated(true);
   }, []);
 
   // For new bookings: fetch property
@@ -98,9 +100,14 @@ function BookingPage() {
   const [showRating, setShowRating] = useState(false);
 
   useEffect(() => {
+    // Wait for the localStorage read to complete before deciding to redirect.
+    // Without this guard, `user` is null on the first render and this effect
+    // fires `router.push("/login")` on every mount — booting the student to
+    // the login screen the moment they tap "Reserve".
+    if (!hydrated) return;
     if (!user) { router.push("/login"); return; }
     if (isNewBooking && !propertyId) { router.push("/properties"); }
-  }, [user, isNewBooking, propertyId, router]);
+  }, [hydrated, user, isNewBooking, propertyId, router]);
 
   const handleGetGPS = () => {
     if (!navigator.geolocation) {

@@ -34,6 +34,8 @@ function RoleChip({ role, className = "" }: { role: string; className?: string }
   );
 }
 import Logo from "./Logo";
+import NotificationBell from "./NotificationBell";
+import Avatar from "./Avatar";
 
 interface StoredUser {
   id: string;
@@ -41,6 +43,7 @@ interface StoredUser {
   role: string;
   first_name?: string | null;
   last_name?: string | null;
+  profile_photo_url?: string | null;
 }
 
 export default function NavBar() {
@@ -142,13 +145,12 @@ export default function NavBar() {
               </Link>
             </>
           ) : (
-            <DropdownMenu>
+            <>
+              <NotificationBell />
+              <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 rounded-full pl-1 pr-3 py-1 hover:bg-[#F7F7F7] transition-colors">
-                  <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                       style={{ background: "#FF5A5F" }}>
-                    {user.first_name?.[0]?.toUpperCase() ?? user.email[0]?.toUpperCase() ?? "U"}
-                  </div>
+                  <Avatar user={user} size={32} />
                   <div className="hidden sm:flex items-center gap-2">
                     <span className="text-sm font-medium">{user.first_name ?? "Account"}</span>
                     <RoleChip role={user.role} />
@@ -189,6 +191,7 @@ export default function NavBar() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </>
           )}
         </div>
       </div>

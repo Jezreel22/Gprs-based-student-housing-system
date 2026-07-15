@@ -35,6 +35,12 @@ export interface RegisterInput {
 export interface LoginInput {
   email: string;
   password: string;
+  /**
+   * Which login tab the user picked. The server rejects a mismatched account
+   * (e.g. a landlord email on the Student tab). Mirrors the Zod schema in
+   * /api/auth/login.
+   */
+  role?: "student" | "landlord";
 }
 
 export interface User {

@@ -9,6 +9,7 @@ import {
   useSendMessage,
 } from "@/api";
 import NavBar from "@/components/NavBar";
+import Avatar from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, MessageSquare, ChevronLeft } from "lucide-react";
@@ -66,6 +67,7 @@ export default function Messages() {
       data: { recipient_id: selectedUserId, message_text: messageText.trim() },
     }, {
       onSuccess: () => {
+        toast({ title: "Message sent" });
         setMessageText("");
         queryClient.invalidateQueries({ queryKey: getGetConversationQueryOptions(selectedUserId).queryKey });
         queryClient.invalidateQueries({ queryKey: getGetConversationsQueryOptions().queryKey });
@@ -121,9 +123,7 @@ export default function Messages() {
                   >
                     <div className="flex items-center gap-3">
                       <div className="relative">
-                        <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold shrink-0">
-                          {other?.first_name?.[0] ?? other?.role?.[0]?.toUpperCase() ?? "?"}
-                        </div>
+                        <Avatar user={other} size={40} />
                         {convo.unread_count > 0 && (
                           <div className="absolute -top-1 -right-1 h-4 w-4 bg-primary rounded-full text-white text-xs flex items-center justify-center">
                             {convo.unread_count}
@@ -167,9 +167,7 @@ export default function Messages() {
                 <button className="md:hidden mr-1" onClick={() => { setSelectedUserId(""); router.push("/messages"); }}>
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
-                  {selectedConvo?.other_user?.first_name?.[0] ?? "?"}
-                </div>
+                <Avatar user={selectedConvo?.other_user} size={32} />
                 <div>
                   <p className="font-semibold text-sm">
                     {selectedConvo?.other_user?.first_name} {selectedConvo?.other_user?.last_name}
@@ -197,8 +195,8 @@ export default function Messages() {
                     return (
                       <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                         {!isMe && (
-                          <div className="h-7 w-7 rounded-full bg-[#EBEBEB] flex items-center justify-center text-xs font-bold mr-2 shrink-0 self-end">
-                            {msg.sender?.first_name?.[0] ?? "?"}
+                          <div className="mr-2 self-end shrink-0">
+                            <Avatar user={msg.sender} size={28} />
                           </div>
                         )}
                         <div

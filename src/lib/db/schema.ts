@@ -257,6 +257,24 @@ export const auditLogTable = pgTable("audit_log", {
   created_at: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ─── notifications ────────────────────────────────────────────────────────
+// Lightweight in-app notification stream. Drives the bell icon in the NavBar.
+// Polled every 30s when the user is signed in. Triggers live in route
+// handlers (post-message, escrow release, etc.). `related_id` is a free-form
+// pointer to the originating entity (message id, booking id, etc.) so the
+// UI can deep-link the notification.
+export const notificationsTable = pgTable("notifications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),        // "message" | "escrow_release" | "escrow_failed" | "login" | "system"
+  title: text("title").notNull(),
+  body: text("body"),
+  related_id: text("related_id"),
+  related_type: text("related_type"),  // "message" | "booking" | etc.
+  read_at: timestamp("read_at"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Inferred types — re-exported for use throughout the route handlers
 export type User = typeof usersTable.$inferSelect;
 export type NewUser = typeof usersTable.$inferInsert;
@@ -278,6 +296,8 @@ export type TrustScore = typeof trustScoresTable.$inferSelect;
 export type NewTrustScore = typeof trustScoresTable.$inferInsert;
 export type AuditLog = typeof auditLogTable.$inferSelect;
 export type NewAuditLog = typeof auditLogTable.$inferInsert;
+export type Notification = typeof notificationsTable.$inferSelect;
+export type NewNotification = typeof notificationsTable.$inferInsert;
 
 export const schema = {
   usersTable,
@@ -290,4 +310,5 @@ export const schema = {
   ratingsTable,
   trustScoresTable,
   auditLogTable,
+  notificationsTable,
 };
