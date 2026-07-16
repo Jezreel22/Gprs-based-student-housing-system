@@ -10,16 +10,15 @@ const nextConfig: NextConfig = {
   async headers() {
     const csp = [
       "default-src 'self'",
-      // js.paystack.co serves the inline checkout script (PaystackPop).
-      "script-src 'self' 'unsafe-inline' https://js.paystack.co",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      // js.paystack.co = inline checkout script (PaystackPop)
+      // accounts.google.com/gsi/client = Google Identity Services (login button)
+      "script-src 'self' 'unsafe-inline' https://js.paystack.co https://*.paystack.com https://accounts.google.com https://*.googleapis.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.paystack.com",
       "font-src 'self' https://fonts.gstatic.com data:",
-      "img-src 'self' data: blob: https://picsum.photos https://lh3.googleusercontent.com https://*.paystack.co https://*.paystack.com",
-      // api.paystack.co is called by the inline popup during charge.
-      "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://api.paystack.co https://*.paystack.co https://*.paystack.com",
-      // The inline popup iframe is served from checkout.paystack.COM (note the
-      // `.com`, not `.co`). Whitelist both TLDs + subdomains so the popup isn't
-      // silently CSP-blocked (which makes the button spin forever with no popup).
+      // picsum.photos redirects to fastly.picsum.photos — both must be allowed.
+      "img-src 'self' data: blob: https://picsum.photos https://fastly.picsum.photos https://lh3.googleusercontent.com https://*.paystack.co https://*.paystack.com https://*.googleusercontent.com",
+      "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://*.googleapis.com https://api.paystack.co https://*.paystack.co https://*.paystack.com https://paystack.com https://picsum.photos https://fastly.picsum.photos",
+      // checkout.paystack.COM hosts the popup iframe; also cover paystack.com apex.
       "frame-src https://accounts.google.com https://www.openstreetmap.org https://*.paystack.co https://*.paystack.com https://paystack.co https://paystack.com",
       "object-src 'none'",
       "base-uri 'self'",

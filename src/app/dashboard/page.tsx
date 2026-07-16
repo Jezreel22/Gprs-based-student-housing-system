@@ -305,6 +305,16 @@ export default function Dashboard() {
                           <p className="text-xs text-muted-foreground">
                             {formatNGN(b.total_amount_ngn)} · Escrow ref: {b.escrow_account_reference}
                           </p>
+                          {/* Code chip — only meaningful while the student still
+                              has to confirm move-in. The endpoint only returns the
+                              code for the landlord, so it won't render for students. */}
+                          {b.property?.occupancy_code && ["pending_occupancy", "pending_review"].includes(b.booking_status) && (
+                            <div className="mt-2 inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 text-xs">
+                              <Lock className="h-3 w-3 text-amber-700" />
+                              <span className="text-muted-foreground">Code:</span>
+                              <span className="font-mono font-bold tracking-[0.2em] text-amber-900">{b.property.occupancy_code}</span>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <Badge style={{ background: status.color + "20", color: status.color, border: "none" }} className="text-xs">

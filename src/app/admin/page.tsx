@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet } from "lucide-react";
+import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/api/custom-fetch";
 
@@ -452,6 +452,23 @@ export default function Admin() {
                         <p className="text-xs text-muted-foreground">
                           {formatNGN(b.total_amount_ngn)} • Landlord: {b.landlord_name ?? "—"} • Student: {b.student_name ?? "—"}
                         </p>
+                        {/* Context for the officer: when funds landed (so they
+                            can spot stale holds) and the occupancy code the
+                            landlord is expected to hand the student. */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
+                          {b.funds_received_at && (
+                            <span className="text-xs text-muted-foreground">
+                              Held since {new Date(b.funds_received_at).toLocaleDateString()}
+                            </span>
+                          )}
+                          {b.occupancy_code && (
+                            <span className="inline-flex items-center gap-1 text-xs">
+                              <Lock className="h-3 w-3 text-amber-700" />
+                              <span className="text-muted-foreground">Code:</span>
+                              <span className="font-mono font-bold tracking-[0.2em] text-amber-900">{b.occupancy_code}</span>
+                            </span>
+                          )}
+                        </div>
                         {b.payout_error && (
                           <p className="text-xs text-red-600 mt-1">Last error: {b.payout_error}</p>
                         )}

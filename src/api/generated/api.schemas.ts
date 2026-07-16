@@ -161,6 +161,12 @@ export interface PropertySummary {
   amenities?: PropertySummaryAmenities;
   /** @nullable */
   created_at?: string | null;
+  /**
+   * 6-char move-in code. Exposed only to the landlord and escrow officer;
+   * the student must receive it out of band. Backend gates the field per
+   * caller role, so undefined on this interface means "not authorised here".
+   */
+  occupancy_code?: string;
 }
 
 export interface PropertyListResponse {

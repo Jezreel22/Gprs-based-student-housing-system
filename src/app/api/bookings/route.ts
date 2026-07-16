@@ -88,6 +88,10 @@ export async function GET(req: NextRequest) {
           deposit_amount_ngn: prop.deposit_amount_ngn,
           rooms: prop.rooms ?? 1,
           listing_status: prop.listing_status ?? "draft",
+          // Exposed ONLY to the landlord of this booking — they need it to hand
+          // to the student. Never to the student (who must receive it out of
+          // band), and this list also returns the student's own rows.
+          occupancy_code: b.landlord_id === me.id ? prop.occupancy_code : undefined,
         } : undefined,
         student: summary(b.student_id),
         landlord: summary(b.landlord_id),

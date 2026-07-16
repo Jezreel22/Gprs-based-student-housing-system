@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2 } from "lucide-react";
+import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2, MessageSquare } from "lucide-react";
 
 function formatNGN(n?: number | null) {
   return n ? `₦${n.toLocaleString("en-NG")}` : "₦—";
@@ -391,6 +391,7 @@ function BookingPage() {
   const b = booking as any;
   const statusConfig = BOOKING_STATUS_CONFIG[b.booking_status] ?? { label: b.booking_status, color: "#717171", desc: "" };
   const isStudent = user?.role === "student";
+  const isLandlord = ["landlord", "agent"].includes(user?.role ?? "");
 
   return (
     <div className="min-h-screen bg-[#F7F7F7]">
@@ -481,6 +482,55 @@ function BookingPage() {
             <p className="text-sm text-muted-foreground mt-0.5">{statusConfig.desc}</p>
           </div>
         </div>
+
+        {/* How escrow works — inline so both parties can see the model on the
+            booking page without a separate help page. Hidden for fully-settled
+            bookings (completed/cancelled) where the explanation is noise. */}
+        {!["completed", "cancelled"].includes(b.booking_status) && (
+          <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 mb-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Shield className="h-4 w-4 text-green-600" />
+              <h2 className="font-semibold text-sm">How escrow works</h2>
+            </div>
+            <ul className="text-sm text-muted-foreground space-y-1.5 list-disc pl-5">
+              <li>Your payment is held by NAUB Homes, not paid to the landlord.</li>
+              <li>The landlord shares a 6-character code with the student to confirm move-in.</li>
+              <li>Once confirmed, funds release after the review window (default 48h).</li>
+              <li>Filing a dispute pauses the release until an escrow officer rules.</li>
+            </ul>
+          </div>
+        )}
+
+        {/* LANDLORD: share the occupancy code with the student. Only shown to
+            the landlord (server gates the code per caller role) and only while
+            there's still something for the student to confirm. */}
+        {isLandlord && b.property?.occupancy_code && ["pending_occupancy", "pending_review"].includes(b.booking_status) && (
+          <div className="bg-white rounded-2xl border-2 border-amber-300 p-5 mb-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Lock className="h-4 w-4 text-amber-600" />
+              <h2 className="font-semibold text-sm">Share your occupancy code</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Send this 6-character code to {b.student?.first_name ?? "your student"} — by message, in person, or any
+              channel they trust. They'll enter it on their booking page to confirm move-in and unlock the escrow release.
+            </p>
+            <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <div className="font-mono text-3xl font-bold tracking-[0.4em] text-amber-900 select-all">
+                {b.property.occupancy_code}
+              </div>
+              {b.student?.id && (
+                <Link href={`/messages/${b.student.id}`}>
+                  <Button size="sm" className="gap-1 shrink-0" style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>
+                    <MessageSquare className="h-3.5 w-3.5" /> Message {b.student?.first_name ?? "student"}
+                  </Button>
+                </Link>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              Keep this code private — anyone with it can confirm the move-in.
+            </p>
+          </div>
+        )}
 
         {/* Payment details */}
         <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 mb-5">

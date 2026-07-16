@@ -78,6 +78,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         rooms: prop.rooms ?? 1,
         listing_status: prop.listing_status ?? "draft",
         hero_photo_url: heroPhoto,
+        // The 6-character code the student must enter to confirm move-in.
+        // Exposed ONLY to the landlord (and the escrow officer for support).
+        // Never to the student — they have to receive it from the landlord.
+        occupancy_code: (me.id === booking.landlord_id || me.role === "escrow_officer") ? prop.occupancy_code : undefined,
       } : undefined,
       student: summary(student),
       landlord: summary(landlord),
