@@ -14,7 +14,6 @@ import NavBar from "@/components/NavBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
@@ -37,13 +36,27 @@ const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string; desc
 
 // Translate a raw Paystack error into a student/landlord-safe message.
 // Never expose raw gateway text — it can include internal codes.
-function friendlyReleaseError(raw: string | null | undefined): string {
-  const lower = (raw ?? "").toLowerCase();
+function friendlyReleaseError(raw: string | null | undefined): string {  const lower = (raw ?? "").toLowerCase();
   if (!lower) return "There was a problem sending the payout. An officer is reviewing this booking.";
   if (lower.includes("insufficient")) return "The platform balance couldn't cover the payout. An officer will retry shortly.";
   if (lower.includes("recipient") || lower.includes("account") || lower.includes("invalid"))
     return "The landlord's bank account couldn't be credited. An officer will review and follow up.";
   return "There was a problem sending the payout. An officer is reviewing this booking.";
+}
+
+// Escrow journey shown as a horizontal stepper on the booking page. The active
+// step is derived from booking_status; statuses outside this list (cancelled,
+// disputed, release_failed) skip the stepper and render only a status banner.
+const ESCROW_STEPS: { key: string; label: string }[] = [
+  { key: "pending_payment", label: "Reserved" },
+  { key: "pending_occupancy", label: "Move-in" },
+  { key: "pending_review", label: "In Review" },
+  { key: "release_pending", label: "Payout" },
+  { key: "completed", label: "Completed" },
+];
+
+function propertyHero(property: any): string {
+  return property?.hero_photo_url || "/placeholder-house.svg";
 }
 
 // NEW BOOKING: /bookings/new?property_id=xxx
@@ -260,9 +273,10 @@ function BookingPage() {
             <div className="flex gap-4">
               <div className="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden shrink-0">
                 <img
-                  src={`https://picsum.photos/seed/${property.id?.substring(0,8)}/160/160`}
+                  src={(property.photos?.[0]?.photo_url) || "/placeholder-house.svg"}
                   alt="Property"
                   className="w-full h-full object-cover"
+                  onError={e => { (e.target as HTMLImageElement).src = "/placeholder-house.svg"; }}
                 />
               </div>
               <div>
@@ -382,49 +396,89 @@ function BookingPage() {
     <div className="min-h-screen bg-[#F7F7F7]">
       <NavBar />
 
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-6 cursor-pointer">
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-5 cursor-pointer">
           <ChevronLeft className="h-4 w-4" /> Back to dashboard
         </Link>
 
-        <div className="flex items-start justify-between mb-6">
+        {/* Hero: property photo with status + address overlay */}
+        <div className="relative rounded-2xl overflow-hidden border border-[#EBEBEB] shadow-sm mb-5">
+          <div className="relative h-44 sm:h-56 bg-gray-100">
+            <img
+              src={propertyHero(b.property)}
+              alt=""
+              className="w-full h-full object-cover"
+              onError={e => { (e.target as HTMLImageElement).src = "/placeholder-house.svg"; }}
+            />
+            <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.12) 48%, rgba(0,0,0,0) 100%)" }} />
+            <div className="absolute top-3 right-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white shadow-md"
+                    style={{ background: statusConfig.color }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-white/90" />
+                {statusConfig.label}
+              </span>
+            </div>
+            <div className="absolute bottom-3 left-4 right-4 text-white">
+              <h1 className="text-lg sm:text-xl font-bold leading-tight drop-shadow-sm">{b.property?.address ?? "Property"}</h1>
+              <p className="text-[11px] text-white/80 mt-0.5">Booking ref · {b.escrow_account_reference}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Escrow progress stepper (hidden for non-linear statuses like disputed/cancelled) */}
+        {(() => {
+          const idx = ESCROW_STEPS.findIndex(s => s.key === b.booking_status);
+          if (idx === -1) return null;
+          return (
+            <div className="bg-white rounded-2xl border border-[#EBEBEB] p-4 mb-5">
+              <div className="flex items-center">
+                {ESCROW_STEPS.map((s, i) => {
+                  const done = i < idx;
+                  const active = i === idx;
+                  const isLast = i === ESCROW_STEPS.length - 1;
+                  return (
+                    <div key={s.key} className="flex items-center" style={{ flex: isLast ? "0 0 auto" : "1 1 auto" }}>
+                      <div className="flex flex-col items-center" style={{ width: 56 }}>
+                        <div className="h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+                             style={{
+                               background: done ? "#16A34A" : active ? "#FF5A5F" : "#EBEBEB",
+                               color: done || active ? "#fff" : "#9A9A9A",
+                               boxShadow: active ? "0 0 0 4px rgba(255,90,95,0.18)" : "none",
+                             }}>
+                          {done ? <CheckCircle className="h-4 w-4" /> : i + 1}
+                        </div>
+                        <span className="text-[10px] mt-1 text-center leading-tight"
+                              style={{ color: active ? "#FF5A5F" : done ? "#16A34A" : "#9A9A9A", fontWeight: active || done ? 600 : 400 }}>
+                          {s.label}
+                        </span>
+                      </div>
+                      {!isLast && (
+                        <div className="h-0.5 flex-1 mx-1 -mt-4 rounded-full"
+                             style={{ background: i < idx ? "#16A34A" : "#EBEBEB" }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Status description banner (color-coded) */}
+        <div className="rounded-2xl border p-4 mb-5 flex items-start gap-3"
+             style={{ background: statusConfig.color + "14", borderColor: statusConfig.color + "40" }}>
+          {b.booking_status === "completed" ? (
+            <CheckCircle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: statusConfig.color }} />
+          ) : b.booking_status === "disputed" || b.booking_status === "release_failed" ? (
+            <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: statusConfig.color }} />
+          ) : b.booking_status === "release_pending" ? (
+            <Loader2 className="h-5 w-5 mt-0.5 shrink-0 animate-spin" style={{ color: statusConfig.color }} />
+          ) : (
+            <Lock className="h-5 w-5 mt-0.5 shrink-0" style={{ color: statusConfig.color }} />
+          )}
           <div>
-            <h1 className="text-xl font-bold">Booking Details</h1>
-            <p className="text-xs text-muted-foreground mt-1">Ref: {b.escrow_account_reference}</p>
-          </div>
-          <Badge style={{ background: statusConfig.color + "20", color: statusConfig.color, border: "none" }}>
-            {statusConfig.label}
-          </Badge>
-        </div>
-
-        {/* Status description */}
-        <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 mb-5">
-          <div className="flex items-start gap-3">
-            {b.booking_status === "completed" ? (
-              <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 shrink-0" />
-            ) : b.booking_status === "disputed" ? (
-              <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
-            ) : (
-              <Lock className="h-5 w-5 text-primary mt-0.5 shrink-0" />
-            )}
-            <div>
-              <p className="font-semibold text-sm mb-1">{statusConfig.label}</p>
-              <p className="text-sm text-muted-foreground">{statusConfig.desc}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Property info */}
-        <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 mb-5">
-          <h2 className="font-semibold mb-3">Property</h2>
-          <div className="flex items-center gap-3">
-            <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden shrink-0">
-              <img src={`https://picsum.photos/seed/${b.property?.id?.substring(0,8)}/160/160`} alt="" className="w-full h-full object-cover" />
-            </div>
-            <div>
-              <p className="font-medium text-sm">{b.property?.address}</p>
-              <p className="text-sm text-muted-foreground">{b.property?.rooms} room(s)</p>
-            </div>
+            <p className="font-semibold text-sm" style={{ color: statusConfig.color }}>{statusConfig.label}</p>
+            <p className="text-sm text-muted-foreground mt-0.5">{statusConfig.desc}</p>
           </div>
         </div>
 

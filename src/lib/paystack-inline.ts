@@ -91,6 +91,32 @@ export async function payWithPaystack(params: PaystackInlineParams): Promise<Pay
   const PaystackPop = await loadPaystack();
 
   return new Promise<PaystackResult>((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void) => { if (!settled) { settled = true; cleanup(); fn(); } };
+    const ok = (r: PaystackResult) => finish(() => resolve(r));
+    const fail = (e: Error) => finish(() => reject(e));
+
+    // If the popup iframe is blocked by CSP (or the browser), Paystack fires
+    // neither `callback` nor `onClose` — the promise would hang forever and
+    // the button would just keep spinning. Listen for the browser's CSP
+    // violation event so we can surface a real, actionable error instead.
+    const onCspViolation = (e: SecurityPolicyViolationEvent) => {
+      const blocked = (e.blockedURI || "").toLowerCase();
+      const directive = e.violatedDirective || "";
+      if (blocked.includes("paystack") || directive === "frame-src" || directive === "script-src") {
+        fail(new Error(
+          "The payment popup was blocked by your browser's security settings. " +
+          "If you're testing locally, restart the dev server after config changes; " +
+          "if this persists, disable ad/popup blockers or try another browser.",
+        ));
+      }
+    };
+    document.addEventListener("securitypolicyviolation", onCspViolation);
+
+    function cleanup() {
+      document.removeEventListener("securitypolicyviolation", onCspViolation);
+    }
+
     const handler = PaystackPop.setup({
       key: params.publicKey,
       email: params.email,
@@ -99,9 +125,9 @@ export async function payWithPaystack(params: PaystackInlineParams): Promise<Pay
       currency: params.currency ?? "NGN",
       metadata: params.metadata,
       channels: params.channels,
-      onClose: () => reject(new Error("PAYSTACK_CLOSED")),
+      onClose: () => fail(new Error("PAYSTACK_CLOSED")),
       callback: (response: PaystackInlineResponse) =>
-        resolve({ reference: response.reference, status: response.status }),
+        ok({ reference: response.reference, status: response.status }),
     });
     handler.openIframe();
   });

@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, asc } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
+import { bookingsTable, propertiesTable, propertyPhotosTable, usersTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, jsonResponse, errorResponse } from "@/lib/api";
 import { maybeReleaseDueBookings } from "@/lib/payout";
@@ -23,10 +23,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return errorResponse("Not authorized to view this booking", 403);
     }
 
-    const [prop, student, landlord] = await Promise.all([
+    const [prop, student, landlord, heroPhoto] = await Promise.all([
       db.select().from(propertiesTable).where(eq(propertiesTable.id, booking.property_id)).limit(1).then((r) => r[0]),
       db.select().from(usersTable).where(eq(usersTable.id, booking.student_id)).limit(1).then((r) => r[0]),
       db.select().from(usersTable).where(eq(usersTable.id, booking.landlord_id)).limit(1).then((r) => r[0]),
+      // First photo (lowest photo_order) for the booking hero thumbnail.
+      db.select({ photo_url: propertyPhotosTable.photo_url })
+        .from(propertyPhotosTable)
+        .where(eq(propertyPhotosTable.property_id, booking.property_id))
+        .orderBy(asc(propertyPhotosTable.photo_order))
+        .limit(1)
+        .then((r) => r[0]?.photo_url ?? null),
     ]);
 
     const summary = (u: typeof student): LandlordSummary | undefined => {
@@ -70,6 +77,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         deposit_amount_ngn: prop.deposit_amount_ngn,
         rooms: prop.rooms ?? 1,
         listing_status: prop.listing_status ?? "draft",
+        hero_photo_url: heroPhoto,
       } : undefined,
       student: summary(student),
       landlord: summary(landlord),
