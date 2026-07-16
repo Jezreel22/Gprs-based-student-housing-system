@@ -183,7 +183,10 @@ export default function Dashboard() {
           <div className="mb-6 bg-white rounded-2xl border border-[#EBEBEB] p-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                <h2 className="font-semibold text-lg mb-1">Active Booking</h2>
+                <div className="flex items-center gap-3 mb-1">
+                  <h2 className="font-semibold text-lg">Active Booking</h2>
+                  <Link href="/bookings" className="text-xs text-primary hover:underline">See all bookings →</Link>
+                </div>
                 <p className="text-sm text-muted-foreground">{activeBooking.property?.address}</p>
                 <div className="mt-2">
                   <Badge

@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, User, LogOut, LayoutDashboard, Home, PlusCircle, MessageSquare, Shield } from "lucide-react";
+import { Menu, User, LogOut, LayoutDashboard, Home, PlusCircle, MessageSquare, Shield, ShoppingBag } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // Human-readable role labels + colors for the avatar chip.
@@ -107,6 +107,16 @@ export default function NavBar() {
               List Property
             </Link>
           )}
+          {user && user.role !== "escrow_officer" && (
+            <Link href="/bookings"
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                pathname === "/bookings"
+                  ? "text-primary bg-primary/10"
+                  : "text-foreground hover:bg-[#F7F7F7]"
+              }`}>
+              My Bookings
+            </Link>
+          )}
           {user && (
             <Link href="/messages"
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -177,6 +187,11 @@ export default function NavBar() {
                 <DropdownMenuItem onClick={() => router.push("/properties")}>
                   <Home className="h-4 w-4 mr-2" /> Browse Listings
                 </DropdownMenuItem>
+                {user.role !== "escrow_officer" && (
+                  <DropdownMenuItem onClick={() => router.push("/bookings")}>
+                    <ShoppingBag className="h-4 w-4 mr-2" /> My Bookings
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={() => router.push("/messages")}>
                   <MessageSquare className="h-4 w-4 mr-2" /> Messages
                 </DropdownMenuItem>
