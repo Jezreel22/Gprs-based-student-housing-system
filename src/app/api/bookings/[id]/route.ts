@@ -4,14 +4,10 @@ import { db } from "@/lib/db";
 import { bookingsTable, propertiesTable, propertyPhotosTable, usersTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, jsonResponse, errorResponse } from "@/lib/api";
-import { maybeReleaseDueBookings } from "@/lib/payout";
 import type { BookingDetail, LandlordSummary } from "@/api/generated/api.schemas";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    // Lazy escrow sweep — release any due bookings when a booking is viewed.
-    void maybeReleaseDueBookings();
-
     const me = await requireAuth(req);
     const { id } = await params;
 

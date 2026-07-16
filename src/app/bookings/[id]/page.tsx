@@ -26,7 +26,7 @@ function formatNGN(n?: number | null) {
 const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string; desc: string }> = {
   pending_payment: { label: "Awaiting Payment", color: "#717171", desc: "This booking is reserved. Complete your Paystack payment to move it into escrow." },
   pending_occupancy: { label: "Awaiting Occupancy Verification", color: "#FF5A5F", desc: "Enter the 6-character code your landlord gave you to confirm you've moved in." },
-  pending_review: { label: "Verified — Awaiting Escrow Release", color: "#F57F17", desc: "Occupancy confirmed! Funds will be released to the landlord after the review period." },
+  pending_review: { label: "Ready to Release", color: "#F57F17", desc: "Move-in confirmed. When you're satisfied, approve the payment to release it to the landlord." },
   release_pending: { label: "Payout In Progress", color: "#1565C0", desc: "Your escrow funds are being transferred to the landlord." },
   release_failed: { label: "Payout Needs Attention", color: "#E1444A", desc: "The payout to the landlord didn't go through. An officer will retry." },
   completed: { label: "Completed", color: "#34A853", desc: "This booking is complete. Escrow has been released." },
@@ -50,7 +50,7 @@ function friendlyReleaseError(raw: string | null | undefined): string {  const l
 const ESCROW_STEPS: { key: string; label: string }[] = [
   { key: "pending_payment", label: "Reserved" },
   { key: "pending_occupancy", label: "Move-in" },
-  { key: "pending_review", label: "In Review" },
+  { key: "pending_review", label: "Approve" },
   { key: "release_pending", label: "Payout" },
   { key: "completed", label: "Completed" },
 ];
@@ -111,6 +111,7 @@ function BookingPage() {
   const [rating, setRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [showRating, setShowRating] = useState(false);
+  const [approvingRelease, setApprovingRelease] = useState(false);
 
   useEffect(() => {
     // Wait for the localStorage read to complete before deciding to redirect.
@@ -246,6 +247,34 @@ function BookingPage() {
       },
       onError: () => toast({ variant: "destructive", title: "Failed to submit review" }),
     });
+  };
+
+  /**
+   * Student authorizes the escrow release. The app records the approval, then
+   * calls Paystack to move the actual money. Single click — no time gate.
+   */
+  const handleApproveRelease = async () => {
+    if (!bookingId) return;
+    setApprovingRelease(true);
+    try {
+      const token = localStorage.getItem("naub_token");
+      const res = await fetch(`/api/bookings/${bookingId}/approve-release`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      toast({ title: "Payment released 🎉", description: "Funds are on their way to the landlord." });
+      refetchBooking();
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't release",
+        description: e?.message ?? "Please try again",
+      });
+    } finally {
+      setApprovingRelease(false);
+    }
   };
 
   // ── NEW BOOKING FORM ────────────────────────────────────────────────────
@@ -612,6 +641,28 @@ function BookingPage() {
             >
               <Lock className="h-4 w-4" />
               {confirmOccupancyMutation.isPending ? "Verifying..." : "Confirm Occupancy"}
+            </Button>
+          </div>
+        )}
+
+        {/* APPROVE ESCROW RELEASE (student, pending_review) — the student
+            authorizes the payment. The app records the approval; Paystack
+            moves the actual money. Until they click, the landlord isn't paid. */}
+        {isStudent && b.booking_status === "pending_review" && (
+          <div className="bg-white rounded-2xl border-2 border-primary p-6 mb-5">
+            <h2 className="font-bold text-lg mb-1">💸 Release Payment to Landlord</h2>
+            <p className="text-sm text-muted-foreground mb-5">
+              Your move-in is confirmed and {formatNGN(b.total_amount_ngn)} is held in escrow.
+              When you're satisfied, release it to the landlord. You'll only need to do this once.
+            </p>
+            <Button
+              className="w-full gap-2"
+              style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+              disabled={approvingRelease}
+              onClick={handleApproveRelease}
+            >
+              <Lock className="h-4 w-4" />
+              {approvingRelease ? "Releasing…" : `Release ${formatNGN(b.total_amount_ngn)} to landlord`}
             </Button>
           </div>
         )}

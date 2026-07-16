@@ -7,31 +7,34 @@ import { handleError, jsonResponse, errorResponse } from "@/lib/api";
 import { releaseBookingEscrow, PayoutError } from "@/lib/payout";
 
 /**
- * POST /api/bookings/[id]/release-escrow
+ * POST /api/bookings/[id]/approve-release
  *
- * Escrow-officer support override: initiate the landlord payout immediately,
- * bypassing the dispute/hold guards. The normal release path is the student
- * approving via /approve-release; this endpoint is for support (e.g. retrying a
- * `release_failed` payout, or releasing when a tenant is unresponsive).
+ * Student authorizes the escrow release. This is the core of escrow: the tenant
+ * (not the landlord) approves, the app records the approval, and Paystack moves
+ * the money. Only the booking's student can call this, and only from
+ * `pending_review` (i.e. they've already confirmed move-in). Guards (dispute /
+ * hold) still apply — an officer uses the force-override endpoint for support.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const officer = await requireAuth(req);
-    if (officer.role !== "escrow_officer") {
-      return errorResponse("Only escrow officers can release escrow", 403);
-    }
+    const me = await requireAuth(req);
     const { id } = await params;
 
     const [booking] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id)).limit(1);
     if (!booking) return errorResponse("Booking not found", 404);
+    if (booking.student_id !== me.id) {
+      return errorResponse("Only the tenant can approve the escrow release", 403);
+    }
 
     try {
       const result = await releaseBookingEscrow(id, {
-        force: true,
-        actorId: officer.id,
-        reason: "officer_override",
+        actorId: me.id,
+        reason: "student_approved",
       });
-      return jsonResponse({ message: result.idempotent ? "Already released" : "Release initiated", reference: result.reference ?? null });
+      return jsonResponse({
+        message: result.idempotent ? "Already released" : "Release initiated",
+        reference: result.reference ?? null,
+      });
     } catch (e) {
       if (e instanceof PayoutError) {
         const status =

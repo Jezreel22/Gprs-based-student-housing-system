@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookingsTable, usersTable, auditLogTable } from "@/lib/db/schema";
 import { amountToKobo, initiateTransfer } from "@/lib/paystack-server";
@@ -20,11 +20,6 @@ function formatNGN(n?: number | null): string {
  * Paystack processes.
  */
 
-// How long after occupancy confirmation before auto-release fires. Default 48h.
-// Override with REVIEW_WINDOW_HOURS (set to 0 in dev to release instantly).
-const REVIEW_WINDOW_HOURS = Number(process.env.REVIEW_WINDOW_HOURS ?? 48);
-const REVIEW_WINDOW_MS = REVIEW_WINDOW_HOURS * 60 * 60 * 1000;
-
 export class PayoutError extends Error {
   code: string;
   constructor(code: string, message: string) {
@@ -35,9 +30,13 @@ export class PayoutError extends Error {
 }
 
 export interface ReleaseOptions {
-  /** Officer override — skip the review-window / hold / dispute guards. */
+  /**
+   * Officer support override — bypasses the student-not-approved / held /
+   * disputed guards. Used by the admin "Release now" button. The normal path
+   * (student authorizes) does NOT set force.
+   */
   force?: boolean;
-  /** Who triggered the release (landlord id for auto, officer id for manual). */
+  /** Who triggered the release (student id normally, officer id when forced). */
   actorId: string;
   reason?: string;
 }
@@ -47,6 +46,12 @@ export interface ReleaseOptions {
  * `release_pending` or `completed` no-ops. Throws `PayoutError` (with a stable
  * `code`) on any guard failure or gateway error; the booking is moved to
  * `release_failed` with a stored reason on transfer errors so it's visible.
+ *
+ * Escrow model: the student authorizes the release (the booking is
+ * `pending_review`, meaning they've confirmed move-in). The app records the
+ * approval; Paystack actually moves the money. An officer can `force` past the
+ * guards for support. There is no arbitrary time delay — release happens when
+ * the tenant is satisfied.
  */
 export async function releaseBookingEscrow(
   bookingId: string,
@@ -69,7 +74,9 @@ export async function releaseBookingEscrow(
     throw new PayoutError("not_releasable", `Booking is "${booking.booking_status}", can't release`);
   }
 
-  // Auto-release guards (officer `force` bypasses them).
+  // Guards an officer `force` bypasses. The normal student-triggered path can
+  // only fire from `pending_review` (move-in confirmed), so the student has
+  // effectively approved — no time window, no silent auto-release.
   if (!opts.force) {
     if (booking.release_held_by_officer_at) {
       throw new PayoutError("held", "Release is on hold by an escrow officer");
@@ -77,10 +84,6 @@ export async function releaseBookingEscrow(
     const ds = booking.dispute_status;
     if (ds && ds !== "no_dispute") {
       throw new PayoutError("disputed", "Booking is under dispute");
-    }
-    const confirmedAt = booking.occupancy_confirmed_by_student_at?.getTime() ?? 0;
-    if (confirmedAt === 0 || Date.now() - confirmedAt < REVIEW_WINDOW_MS) {
-      throw new PayoutError("not_due", "Review window has not elapsed");
     }
   }
 
@@ -138,7 +141,7 @@ export async function releaseBookingEscrow(
         transfer_code: transfer.transfer_code,
         amount_kobo: amountKobo,
         actor: opts.actorId,
-        reason: opts.reason ?? (opts.force ? "officer_override" : "review_window"),
+        reason: opts.reason ?? (opts.force ? "officer_override" : "student_approved"),
       },
     });
 
@@ -194,42 +197,5 @@ export async function releaseBookingEscrow(
     });
 
     throw new PayoutError("transfer_failed", msg);
-  }
-}
-
-/**
- * Lazy auto-release sweep. Find every `pending_review` booking past the review
- * window (not held, not disputed) and initiate its transfer. Called from the
- * dashboard / booking loaders so we don't need a scheduler. Never throws — a
- * failure here must not break page load.
- */
-export async function maybeReleaseDueBookings(): Promise<void> {
-  try {
-    const cutoff = new Date(Date.now() - REVIEW_WINDOW_MS);
-    const due = await db
-      .select()
-      .from(bookingsTable)
-      .where(
-        and(
-          eq(bookingsTable.booking_status, "pending_review"),
-          isNull(bookingsTable.release_held_by_officer_at),
-          isNotNull(bookingsTable.occupancy_confirmed_by_student_at),
-          lt(bookingsTable.occupancy_confirmed_by_student_at, cutoff),
-        ),
-      );
-    for (const b of due) {
-      // Skip anything actively disputed (default "no_dispute" / null is fine).
-      if (b.dispute_status && b.dispute_status !== "no_dispute") continue;
-      try {
-        await releaseBookingEscrow(b.id, {
-          actorId: b.landlord_id,
-          reason: "review_window",
-        });
-      } catch {
-        // release_failed is recorded inside the helper; keep sweeping.
-      }
-    }
-  } catch {
-    // Swallow — never crash the page load on the lazy sweep.
   }
 }

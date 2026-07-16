@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Home, Plus, ShieldCheck, ShieldAlert, Calendar, Clock,
-  CheckCircle, AlertCircle, Lock, ArrowRight, MessageSquare, CreditCard
+  AlertCircle, Lock, ArrowRight, MessageSquare, CreditCard
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -217,8 +217,8 @@ export default function Dashboard() {
               )}
               {activeBooking.booking_status === "pending_review" && (
                 <Link href={`/bookings/${activeBooking.id}`}>
-                  <Button variant="outline" className="gap-2 shrink-0">
-                    <CheckCircle className="h-4 w-4 text-green-600" /> View Booking
+                  <Button style={{ background: "#FF5A5F", color: "#fff", border: "none" }} className="gap-2 shrink-0">
+                    <Lock className="h-4 w-4" /> Approve & Release Payment
                   </Button>
                 </Link>
               )}

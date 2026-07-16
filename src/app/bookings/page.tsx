@@ -9,7 +9,7 @@ import NavBar from "@/components/NavBar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  ChevronLeft, ArrowRight, CreditCard, MessageSquare,
+  ChevronLeft, ArrowRight, CreditCard, MessageSquare, Lock,
   ShoppingBag, CheckCircle, XCircle, Clock,
 } from "lucide-react";
 
@@ -28,7 +28,7 @@ function formatNGN(n?: number | null) {
 const BOOKING_STATUS_MAP: Record<string, { label: string; color: string }> = {
   pending_payment: { label: "Awaiting Payment", color: "#717171" },
   pending_occupancy: { label: "Awaiting Move-in", color: "#FF5A5F" },
-  pending_review: { label: "In Review", color: "#F57F17" },
+  pending_review: { label: "Ready to Release", color: "#F57F17" },
   release_pending: { label: "Payout In Progress", color: "#1565C0" },
   release_failed: { label: "Payout Needs Attention", color: "#E1444A" },
   completed: { label: "Completed", color: "#34A853" },
@@ -94,6 +94,13 @@ function BookingRow({ b, user }: { b: any; user: StoredUser }) {
           <Link href={`/bookings/${b.id}`} className="flex-1 sm:flex-none">
             <Button size="sm" className="w-full gap-1" style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>
               <CreditCard className="h-3.5 w-3.5" /> Pay now
+            </Button>
+          </Link>
+        )}
+        {isStudent && b.booking_status === "pending_review" && (
+          <Link href={`/bookings/${b.id}`} className="flex-1 sm:flex-none">
+            <Button size="sm" className="w-full gap-1" style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>
+              <Lock className="h-3.5 w-3.5" /> Release payment
             </Button>
           </Link>
         )}
