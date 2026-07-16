@@ -653,7 +653,7 @@ function BookingPage() {
             <h2 className="font-bold text-lg mb-1">💸 Release Payment to Landlord</h2>
             <p className="text-sm text-muted-foreground mb-5">
               Your move-in is confirmed and {formatNGN(b.total_amount_ngn)} is held in escrow.
-              When you're satisfied, release it to the landlord. You'll only need to do this once.
+              When you're satisfied, click to release it to {b.landlord?.first_name ?? "the landlord"}. Paystack handles the transfer.
             </p>
             <Button
               className="w-full gap-2"

@@ -37,11 +37,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
     } catch (e) {
       if (e instanceof PayoutError) {
+        // Student-facing copy on the most common blockers — the server error
+        // message is fine for officers but mean to a tenant; reword here.
+        const studentMessage =
+          e.code === "no_payout_details"
+            ? "Your landlord hasn't set up their payout account yet. Ask them to add their bank details on their dashboard, then try again."
+            : e.code === "not_releasable"
+              ? "This booking isn't ready to release yet. Confirm move-in first."
+              : e.code === "held"
+                ? "An escrow officer has paused this payment. They'll release it shortly."
+                : e.code === "disputed"
+                  ? "This booking is under dispute and can't be released until an officer rules."
+                  : e.message;
         const status =
           e.code === "not_found" ? 404 :
           e.code === "no_payout_details" ? 409 :
           e.code === "transfer_failed" ? 502 : 409;
-        return errorResponse(e.message, status, { code: e.code });
+        return errorResponse(studentMessage, status, { code: e.code });
       }
       throw e;
     }
