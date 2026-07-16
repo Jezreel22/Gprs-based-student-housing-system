@@ -483,24 +483,6 @@ function BookingPage() {
           </div>
         </div>
 
-        {/* How escrow works — inline so both parties can see the model on the
-            booking page without a separate help page. Hidden for fully-settled
-            bookings (completed/cancelled) where the explanation is noise. */}
-        {!["completed", "cancelled"].includes(b.booking_status) && (
-          <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 mb-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Shield className="h-4 w-4 text-green-600" />
-              <h2 className="font-semibold text-sm">How escrow works</h2>
-            </div>
-            <ul className="text-sm text-muted-foreground space-y-1.5 list-disc pl-5">
-              <li>Your payment is held by NAUB Homes, not paid to the landlord.</li>
-              <li>The landlord shares a 6-character code with the student to confirm move-in.</li>
-              <li>Once confirmed, funds release after the review window (default 48h).</li>
-              <li>Filing a dispute pauses the release until an escrow officer rules.</li>
-            </ul>
-          </div>
-        )}
-
         {/* LANDLORD: share the occupancy code with the student. Only shown to
             the landlord (server gates the code per caller role) and only while
             there's still something for the student to confirm. */}

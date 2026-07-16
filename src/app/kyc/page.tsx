@@ -220,8 +220,9 @@ export default function KYC() {
           `(HTTP ${res.status}${res.statusText ? " " + res.statusText : ""})`
         );
       }
-      const updated = { ...user, verification_status: "under_review", kyc_submitted_at: new Date().toISOString() };
+      const updated = { ...user, verification_status: "verified", kyc_submitted_at: new Date().toISOString() };
       localStorage.setItem("naub_user", JSON.stringify(updated));
+      setUser(updated);
       window.dispatchEvent(new Event("storage"));
       setSubmitting(false);
       setStatus("verifying");
@@ -264,20 +265,22 @@ export default function KYC() {
             <ShieldCheck className="h-10 w-10 text-green-600" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold mb-2">Documents Submitted!</h2>
+            <h2 className="text-2xl font-bold mb-2">You're verified! 🎉</h2>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Your KYC documents are under review. You'll receive a notification once verification is complete — typically within a few minutes.
+              Your identity is verified. You can list properties now and start receiving bookings.
             </p>
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-start gap-2.5 text-sm text-green-800 text-left">
-            <Lock className="h-4 w-4 shrink-0 mt-0.5 text-green-600" />
-            <span>Your documents are encrypted and reviewed securely by our verification team.</span>
+          <div className="flex flex-col gap-2">
+            <Button className="w-full h-11 rounded-xl font-semibold"
+                    style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+                    onClick={() => router.push("/properties/new")}>
+              List a Property
+            </Button>
+            <Button variant="outline" className="w-full h-11 rounded-xl font-semibold"
+                    onClick={() => router.push("/dashboard")}>
+              Go to Dashboard
+            </Button>
           </div>
-          <Button className="w-full h-11 rounded-xl font-semibold"
-                  style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
-                  onClick={() => router.push("/dashboard")}>
-            Go to Dashboard
-          </Button>
         </div>
       </div>
     );
@@ -295,32 +298,25 @@ export default function KYC() {
             <ShieldCheck className="h-10 w-10 text-green-600" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold mb-2">KYC Already Submitted</h2>
+            <h2 className="text-2xl font-bold mb-2">You're verified ✅</h2>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Your documents were submitted
+              Your identity was verified
               {submitted && (
                 <> on <span className="font-medium text-foreground">{submitted.toLocaleDateString()}</span></>
               )}
-              . Verification typically completes within a few minutes; you'll see your status update on the dashboard.
+              . You can list properties and receive bookings.
             </p>
-            <p className="text-muted-foreground text-sm leading-relaxed mt-3">
-              Status: <span className="font-medium text-foreground capitalize">{(user.verification_status ?? "pending").replace("_", " ")}</span>
-            </p>
-          </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5 text-sm text-amber-800 text-left">
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-            <span>If we asked you to add or replace a document, you'll receive a notification. You don't need to redo the 5 stages.</span>
           </div>
           <div className="flex flex-col gap-2">
             <Button className="w-full h-11 rounded-xl font-semibold"
                     style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+                    onClick={() => router.push("/properties/new")}>
+              List a Property
+            </Button>
+            <Button variant="outline" className="w-full h-11 rounded-xl font-semibold"
                     onClick={() => router.push("/dashboard")}>
               Go to Dashboard
             </Button>
-            <button onClick={() => { localStorage.removeItem("naub_user.kyc_submitted_at"); setStatus("idle"); }}
-              className="text-xs text-muted-foreground hover:text-foreground underline">
-              I need to resubmit (clears local flag only)
-            </button>
           </div>
         </div>
       </div>
