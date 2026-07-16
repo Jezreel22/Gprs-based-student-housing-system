@@ -10,6 +10,10 @@ import {
   ChevronRight, RefreshCw, AlertCircle, ShieldCheck, Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { checkFacePresence } from "@/lib/face-check";
+import { customFetch } from "@/api/custom-fetch";
+
+interface Bank { name: string; code: string; }
 
 type IdDocType = "nin" | "international_passport" | "drivers_licence";
 type PropDocType = "certificate_of_occupancy" | "deed_of_assignment" | "right_of_occupancy" | "land_certificate";
@@ -31,6 +35,7 @@ const STEPS = [
   { label: "ID Type", desc: "Choose your identity document" },
   { label: "Upload ID", desc: "Upload a clear photo of your ID" },
   { label: "Face Check", desc: "Live facial verification" },
+  { label: "Bank", desc: "Verify a bank account in your name" },
   { label: "Property Doc", desc: "Upload property ownership document" },
   { label: "Submit", desc: "Review and submit" },
 ];
@@ -85,8 +90,17 @@ export default function KYC() {
 
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [faceConfidence, setFaceConfidence] = useState(0);
+  const [faceReason, setFaceReason] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<"idle" | "verifying" | "done" | "error">("idle");
+
+  // Bank-account identity anchor (resolved server-side via Paystack).
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [bankCode, setBankCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [bvn, setBvn] = useState("");
+  const [bankQuery, setBankQuery] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -102,6 +116,14 @@ export default function KYC() {
     else stopCamera();
     return () => stopCamera();
   }, [step]);
+
+  // Load the bank list once (used for the identity-verification account picker).
+  useEffect(() => {
+    if (!token) return;
+    customFetch<{ data: Bank[] }>("/api/banks")
+      .then((r) => setBanks((r as any)?.data ?? []))
+      .catch(() => { /* surfaced inline when the picker is empty */ });
+  }, [token]);
 
   async function startCamera() {
     setCameraError(null);
@@ -126,10 +148,45 @@ export default function KYC() {
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
     setCameraReady(false);
+    if (faceLoopRef.current) { cancelAnimationFrame(faceLoopRef.current); faceLoopRef.current = null; }
   }
 
-  function captureSelfie() {
+  // Live face-presence scan while the camera streams, so the user gets feedback
+  // ("no face detected / too dark") before they even capture.
+  const faceLoopRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!cameraReady || step !== 2) return;
+    let last = 0;
+    const tick = async () => {
+      const now = Date.now();
+      if (now - last > 600 && videoRef.current && videoRef.current.videoWidth > 0) {
+        last = now;
+        try {
+          const res = await checkFacePresence(videoRef.current);
+          setFaceConfidence(res.confidence);
+          setFaceReason(res.confidence < 55 ? res.reason : null);
+        } catch { /* keep scanning */ }
+      }
+      faceLoopRef.current = requestAnimationFrame(tick);
+    };
+    faceLoopRef.current = requestAnimationFrame(tick);
+    return () => { if (faceLoopRef.current) cancelAnimationFrame(faceLoopRef.current); };
+  }, [cameraReady, step]);
+
+  async function captureSelfie() {
     if (!videoRef.current) return;
+    // Run the real check on the frame we're about to keep.
+    const check = await checkFacePresence(videoRef.current);
+    setFaceConfidence(check.confidence);
+    setFaceReason(check.confidence < 55 ? check.reason : null);
+    if (check.confidence < 55) {
+      toast({
+        variant: "destructive",
+        title: "Face not detected",
+        description: check.reason,
+      });
+      return; // don't accept a frame that failed the check
+    }
     const canvas = document.createElement("canvas");
     canvas.width = videoRef.current.videoWidth || 640;
     canvas.height = videoRef.current.videoHeight || 480;
@@ -179,7 +236,7 @@ export default function KYC() {
   }
 
   async function handleSubmit() {
-    if (!user || !token || !idDocBase64 || !selfieBase64 || !idDocType) {
+    if (!user || !token || !idDocBase64 || !selfieBase64 || !idDocType || !propDocBase64 || !propDocType) {
       // Surface the missing-field case explicitly instead of silently returning;
       // the user reported "Submission failed" with no clue, and silent returns
       // were a likely culprit for that symptom on partial flows.
@@ -187,8 +244,22 @@ export default function KYC() {
       if (!idDocType) missing.push("ID document type");
       if (!idDocBase64) missing.push("ID document upload");
       if (!selfieBase64) missing.push("selfie");
+      if (!propDocType) missing.push("property document type");
+      if (!propDocBase64) missing.push("property ownership document");
       toast({ variant: "destructive", title: "Missing required information",
               description: `Please complete: ${missing.join(", ") || "log in"}.` });
+      return;
+    }
+    if (faceConfidence < 55) {
+      toast({ variant: "destructive", title: "Face check incomplete",
+              description: faceReason ?? "Retake the selfie so a live face is clearly detected." });
+      setStep(2);
+      return;
+    }
+    if (!bvn || bvn.length !== 11 || !accountNumber || accountNumber.length !== 10 || !bankCode) {
+      toast({ variant: "destructive", title: "BVN and bank account required",
+              description: "Add your 11-digit BVN and a bank account registered in your own name so Paystack can verify your identity." });
+      setStep(3);
       return;
     }
     setSubmitting(true);
@@ -200,6 +271,10 @@ export default function KYC() {
           national_id_type: idDocType,
           national_id_document_url: idDocBase64,
           selfie_url: selfieBase64,
+          face_confidence: faceConfidence,
+          bvn,
+          bank_account_number: accountNumber,
+          bank_code: bankCode,
           property_document_url: propDocBase64 ?? undefined,
         }),
       });
@@ -482,9 +557,19 @@ export default function KYC() {
                 )}
               </div>
 
+              {!selfieBase64 && cameraReady && (
+                <div className={cn(
+                  "flex items-center gap-2 text-sm rounded-xl px-3 py-2.5 border",
+                  faceConfidence >= 55 ? "text-green-700 bg-green-50 border-green-200" : "text-amber-800 bg-amber-50 border-amber-200",
+                )}>
+                  {faceConfidence >= 55 ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
+                  <span>{faceConfidence >= 55 ? "Face detected — ready to capture." : (faceReason ?? "Looking for a face…")}</span>
+                </div>
+              )}
+
               {selfieBase64 && (
                 <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
-                  <CheckCircle className="h-4 w-4 shrink-0" /> Photo captured — face detected successfully
+                  <CheckCircle className="h-4 w-4 shrink-0" /> Live face captured and checked
                 </div>
               )}
 
@@ -514,8 +599,75 @@ export default function KYC() {
             </div>
           )}
 
-          {/* Step 3: Property ownership document */}
+          {/* Step 3: Bank-account identity check */}
           {step === 3 && (
+            <div className="space-y-5">
+              <div className="mb-2">
+                <h2 className="text-lg font-bold">Verify Your Bank Account</h2>
+                <p className="text-sm text-muted-foreground mt-1">Use an account registered in your own name. Paystack checks it against the bank before you can continue.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium block mb-1.5">11-digit BVN</label>
+                  <input
+                    inputMode="numeric"
+                    maxLength={11}
+                    value={bvn}
+                    onChange={(e) => setBvn(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                    placeholder="12345678901"
+                    className="w-full h-11 rounded-xl border border-[#EBEBEB] px-3 font-mono text-sm outline-none focus:border-primary"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1.5">Checked with Paystack and never stored by NAUB Homes.</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1.5">Payout bank</label>
+                  <input
+                    value={bankQuery}
+                    onChange={(e) => setBankQuery(e.target.value)}
+                    placeholder="Search for your bank"
+                    className="w-full h-11 rounded-xl border border-[#EBEBEB] px-3 text-sm outline-none focus:border-primary"
+                  />
+                  <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-[#EBEBEB]">
+                    {banks.filter((bank) => bank.name.toLowerCase().includes(bankQuery.toLowerCase())).slice(0, 12).map((bank) => (
+                      <button
+                        key={bank.code}
+                        type="button"
+                        onClick={() => { setBankCode(bank.code); setBankQuery(bank.name); }}
+                        className={cn("w-full text-left px-3 py-2.5 text-sm border-b last:border-b-0 hover:bg-[#F7F7F7]", bankCode === bank.code && "bg-primary/10 text-primary font-medium")}
+                      >
+                        {bank.name}
+                      </button>
+                    ))}
+                    {!banks.length && <p className="px-3 py-3 text-sm text-muted-foreground">Loading Paystack bank list…</p>}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1.5">10-digit account number</label>
+                  <input
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    placeholder="0123456789"
+                    className="w-full h-11 rounded-xl border border-[#EBEBEB] px-3 font-mono text-sm outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1 h-11 rounded-xl" onClick={() => setStep(2)}>Back</Button>
+                <Button className="flex-1 h-11 rounded-xl font-semibold" disabled={!bankCode || accountNumber.length !== 10 || bvn.length !== 11}
+                        style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+                        onClick={() => setStep(4)}>
+                  Continue <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Property ownership document */}
+          {step === 4 && (
             <div className="space-y-5">
               <div className="mb-2">
                 <h2 className="text-lg font-bold">Property Ownership Document</h2>
@@ -566,23 +718,18 @@ export default function KYC() {
               )}
 
               <div className="flex gap-3">
-                <Button variant="outline" className="flex-1 h-11 rounded-xl" onClick={() => setStep(2)}>Back</Button>
+                <Button variant="outline" className="flex-1 h-11 rounded-xl" onClick={() => setStep(3)}>Back</Button>
                 <Button className="flex-1 h-11 rounded-xl font-semibold" disabled={!propDocBase64 || !propDocType}
                         style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
-                        onClick={() => setStep(4)}>
+                        onClick={() => setStep(5)}>
                   Continue <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
               </div>
-
-              <button onClick={() => setStep(4)}
-                className="w-full text-center text-xs text-muted-foreground hover:text-foreground underline">
-                I don't have this document right now (skip)
-              </button>
             </div>
           )}
 
-          {/* Step 4: Review & submit */}
-          {step === 4 && (
+          {/* Step 5: Review & submit */}
+          {step === 5 && (
             <div className="space-y-5">
               <div className="mb-2">
                 <h2 className="text-lg font-bold">Review & Submit</h2>
@@ -657,7 +804,7 @@ export default function KYC() {
               </div>
 
               <div className="flex gap-3">
-                <Button variant="outline" className="flex-1 h-11 rounded-xl" onClick={() => setStep(3)} disabled={submitting}>Back</Button>
+                <Button variant="outline" className="flex-1 h-11 rounded-xl" onClick={() => setStep(4)} disabled={submitting}>Back</Button>
                 <Button className="flex-1 h-11 rounded-xl font-semibold" onClick={handleSubmit} disabled={submitting}
                         style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>
                   {submitting ? "Submitting…" : "Submit for Verification"}

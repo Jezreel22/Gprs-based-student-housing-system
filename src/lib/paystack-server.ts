@@ -175,11 +175,23 @@ export async function resolveAccountNumber(input: {
   return { account_name: String(json.data.account_name).trim() };
 }
 
-/**
- * Mint a Paystack transfer recipient (the token we use to send money to this
- * bank account later). We store the returned `recipient_code` so subsequent
- * transfers don't need to re-collect bank details.
- */
+export async function resolveBvn(bvn: string): Promise<{ first_name: string | null; last_name: string | null }> {
+  assertConfigured();
+  const res = await fetch(`${PAYSTACK_BASE}/bank/resolve_bvn?bvn=${encodeURIComponent(bvn)}`, {
+    headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` },
+    cache: "no-store",
+  });
+  const json = (await res.json()) as any;
+  if (!res.ok || !json?.data) {
+    throw new Error(json?.message ?? `Paystack BVN resolve failed (HTTP ${res.status})`);
+  }
+  return {
+    first_name: typeof json.data.first_name === "string" ? json.data.first_name : null,
+    last_name: typeof json.data.last_name === "string" ? json.data.last_name : null,
+  };
+}
+
+
 export async function createTransferRecipient(input: {
   account_number: string;
   bank_code: string;
