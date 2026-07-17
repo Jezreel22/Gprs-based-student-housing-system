@@ -169,7 +169,14 @@ export async function releaseBookingEscrow(
 
     return { idempotent: false, reference };
   } catch (e: any) {
-    const msg = e?.paystack?.message ?? e?.message ?? "Transfer failed";
+    const raw = e?.paystack;
+    const msg = raw?.message ?? e?.message ?? "Transfer failed";
+    // Paystack refuses third-party payouts for Starter Business accounts with
+    // code `transfer_unavailable`. This is an account-tier gate, not a
+    // transient failure — retrying won't help and wedges the booking. Surface
+    // a stable code so callers can render honest guidance.
+    const isTierGate = raw?.code === "transfer_unavailable" || /third party payout|starter business/i.test(msg);
+    const code = isTierGate ? "transfer_unavailable" : "transfer_failed";
     await db
       .update(bookingsTable)
       .set({
@@ -183,7 +190,7 @@ export async function releaseBookingEscrow(
       action_type: "escrow_release_failed",
       resource_type: "booking",
       resource_id: booking.id,
-      details: { reference, error: msg, actor: opts.actorId },
+      details: { reference, error: msg, code, actor: opts.actorId },
     });
 
     // Tell the landlord so they (and the officer) see the failure surfaced.
@@ -191,11 +198,13 @@ export async function releaseBookingEscrow(
       userId: landlord.id,
       type: "system",
       title: "Payout needs attention",
-      body: "Your escrow release didn't go through. An officer will retry shortly.",
+      body: isTierGate
+        ? "Payouts are paused while the platform's Paystack account is upgraded to a Registered Business. Your funds are held safely until then."
+        : "Your escrow release didn't go through. An officer will retry shortly.",
       relatedId: booking.id,
       relatedType: "booking",
     });
 
-    throw new PayoutError("transfer_failed", msg);
+    throw new PayoutError(code, msg);
   }
 }

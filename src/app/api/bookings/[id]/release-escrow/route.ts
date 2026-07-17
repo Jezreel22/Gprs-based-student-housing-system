@@ -37,7 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const status =
           e.code === "not_found" ? 404 :
           e.code === "no_payout_details" ? 409 :
-          e.code === "transfer_failed" ? 502 : 409;
+          e.code === "transfer_failed" ? 502 :
+          e.code === "transfer_unavailable" ? 503 : 409;
         return errorResponse(e.message, status, { code: e.code });
       }
       throw e;
