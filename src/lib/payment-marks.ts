@@ -1,7 +1,75 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { bookingsTable, propertiesTable } from "@/lib/db/schema";
+import { auditLogTable, bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
 import { notifyEscrowFunded } from "@/lib/notify";
+import { getEscrowOfficers } from "@/lib/notify";
+import { createNotification } from "@/lib/notify";
+import { recordTrustEvent } from "@/lib/trust/service";
+
+/**
+ * Mark an escrow payout as settled (`release_pending` → `completed`).
+ *
+ * Source of truth is the Paystack `transfer.success` webhook, but the Transfer
+ * API can also return `status: "success"` synchronously on a hot account. This
+ * helper is the single idempotent funnel both paths call: it only flips a
+ * booking that is currently `release_pending`, so an immediate success and a
+ * later webhook cannot double-fire notifications, audit rows, or trust events.
+ * Returns true only when a transition actually happened.
+ */
+export async function completeBookingPayout(args: {
+  bookingId: string;
+  reference: string;
+  transferCode?: string | null;
+  reason?: "transfer_success_webhook" | "transfer_success_immediate";
+}): Promise<boolean> {
+  const result = await db
+    .update(bookingsTable)
+    .set({
+      booking_status: "completed",
+      escrow_released_at: new Date(),
+      payout_error: null,
+      updated_at: new Date(),
+    })
+    .where(
+      and(
+        eq(bookingsTable.id, args.bookingId),
+        eq(bookingsTable.booking_status, "release_pending"),
+      ),
+    )
+    .returning();
+
+  if (result.length === 0) return false;
+
+  const [booking] = result;
+  await db.insert(auditLogTable).values({
+    actor_id: booking.landlord_id,
+    action_type: "escrow_released",
+    resource_type: "booking",
+    resource_id: booking.id,
+    details: { reference: args.reference, transfer_code: args.transferCode ?? null, reason: args.reason ?? "transfer_success_webhook" },
+  });
+
+  // Successful completed transaction — both participants earn trust. Each party
+  // has its own dedupe key so a replayed event can't double-count.
+  await recordTrustEvent({
+    userId: booking.student_id,
+    ruleKey: "transaction_completed",
+    sourceType: "booking",
+    sourceId: booking.id,
+    dedupeKey: `transaction-completed:${booking.id}:student`,
+    reason: "Booking completed",
+  });
+  await recordTrustEvent({
+    userId: booking.landlord_id,
+    ruleKey: "transaction_completed",
+    sourceType: "booking",
+    sourceId: booking.id,
+    dedupeKey: `transaction-completed:${booking.id}:landlord`,
+    reason: "Booking completed",
+  });
+
+  return true;
+}
 
 /**
  * Mark a booking as paid — idempotent. Only flips the lifecycle when the

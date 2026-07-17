@@ -12,6 +12,7 @@ export interface InitializePaymentResponse {
   amount_kobo: number;
   currency: string;
   booking_id: string;
+  metadata: { booking_id: string };
 }
 
 export type VerifyStatus = "success" | "failed" | "pending";

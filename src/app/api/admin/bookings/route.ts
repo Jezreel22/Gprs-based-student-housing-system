@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
@@ -24,12 +24,17 @@ export async function GET(req: NextRequest) {
       .select()
       .from(bookingsTable)
       .where(
-        inArray(bookingsTable.booking_status, [
-          "pending_occupancy",
-          "pending_review",
-          "release_pending",
-          "release_failed",
-        ]),
+        or(
+          inArray(bookingsTable.booking_status, [
+            "pending_occupancy",
+            "pending_review",
+            "release_pending",
+            "release_failed",
+          ]),
+          // A completed booking with a payout_error means a payout was reversed
+          // after settlement — surface it for officer review.
+          and(eq(bookingsTable.booking_status, "completed"), isNotNull(bookingsTable.payout_error)),
+        ),
       );
 
     const propertyIds = Array.from(new Set(rows.map((b) => b.property_id)));

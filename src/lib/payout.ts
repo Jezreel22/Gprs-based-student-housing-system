@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookingsTable, usersTable, auditLogTable } from "@/lib/db/schema";
-import { amountToKobo, initiateTransfer } from "@/lib/paystack-server";
+import { amountToKobo, createTransferRecipient, initiateTransfer, resolveAccountNumber } from "@/lib/paystack-server";
 import { createNotification } from "@/lib/notify";
+import { completeBookingPayout } from "@/lib/payment-marks";
 
 function formatNGN(n?: number | null): string {
   if (!n) return "₦0";
@@ -92,7 +93,32 @@ export async function releaseBookingEscrow(
     .from(usersTable)
     .where(eq(usersTable.id, booking.landlord_id))
     .limit(1);
-  if (!landlord?.paystack_recipient_code) {
+  if (!landlord) throw new PayoutError("not_found", "Landlord not found");
+
+  // Legacy landlords (verified before recipient creation was added, or whose
+  // recipient lives on the wrong account after a key rotation) can reach release
+  // without a paystack_recipient_code. If they've saved a bank account, repair
+  // it now against the currently configured Paystack account so the student's
+  // approval isn't blocked by a setup gap. We never infer bank data — only use
+  // what the landlord previously saved.
+  if (!landlord.paystack_recipient_code && landlord.payout_account_number && landlord.payout_bank_code) {
+    try {
+      const resolved = await resolveAccountNumber({ account_number: landlord.payout_account_number, bank_code: landlord.payout_bank_code });
+      const recipient = await createTransferRecipient({ account_number: landlord.payout_account_number, bank_code: landlord.payout_bank_code, account_name: resolved.account_name });
+      const [repaired] = await db.update(usersTable).set({
+        paystack_recipient_code: recipient.recipient_code,
+        payout_account_name: resolved.account_name,
+        payout_details_set_at: new Date(),
+        updated_at: new Date(),
+      }).where(eq(usersTable.id, landlord.id)).returning();
+      Object.assign(landlord, repaired);
+    } catch {
+      await db.update(bookingsTable).set({ booking_status: "release_failed", payout_error: "Landlord payout account could not be verified", updated_at: new Date() }).where(eq(bookingsTable.id, bookingId));
+      throw new PayoutError("no_payout_details", "Landlord payout account could not be verified");
+    }
+  }
+
+  if (!landlord.paystack_recipient_code) {
     await db
       .update(bookingsTable)
       .set({
@@ -166,6 +192,15 @@ export async function releaseBookingEscrow(
         relatedType: "booking",
       }),
     ]);
+
+    // Paystack usually returns `pending`, but a hot/verified account can return
+    // `success` synchronously. Settle immediately through the shared funnel so
+    // the booking reflects reality without waiting for the webhook. The funnel
+    // is gated on `release_pending`, so the later `transfer.success` webhook is
+    // a safe no-op rather than a double-fire.
+    if (String(transfer.status).toLowerCase() === "success") {
+      await completeBookingPayout({ bookingId: booking.id, reference, transferCode: transfer.transfer_code, reason: "transfer_success_immediate" });
+    }
 
     return { idempotent: false, reference };
   } catch (e: any) {

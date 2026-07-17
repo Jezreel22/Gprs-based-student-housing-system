@@ -4,8 +4,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookingsTable, auditLogTable } from "@/lib/db/schema";
 import { verifyWebhookSignature } from "@/lib/paystack-server";
-import { markBookingPaidByReference } from "@/lib/payment-marks";
-import { recordTrustEvent } from "@/lib/trust/service";
+import { markBookingPaidByReference, completeBookingPayout } from "@/lib/payment-marks";
+import { getEscrowOfficers } from "@/lib/notify";
+import { createNotification } from "@/lib/notify";
 
 // Force Node.js so we can use `crypto.createHmac` (the App Router also runs
 // on Node by default, but this is explicit and protects against accidental
@@ -95,49 +96,37 @@ async function handleTransferEvent(event: any) {
 
   // Idempotent: if this booking already moved past the in-flight state, no-op.
   if (event.event === "transfer.success") {
-    if (booking.booking_status === "completed") return new NextResponse(null, { status: 200 });
-
-    await db
-      .update(bookingsTable)
-      .set({
-        booking_status: "completed",
-        escrow_released_at: new Date(),
-        payout_error: null,
-        updated_at: new Date(),
-      })
-      .where(eq(bookingsTable.id, booking.id));
-
-    await db.insert(auditLogTable).values({
-      actor_id: booking.landlord_id,
-      action_type: "escrow_released",
-      resource_type: "booking",
-      resource_id: booking.id,
-      details: { reference, transfer_code: transferCode ?? null },
-    });
-
-    // Successful completed transaction — both participants earn trust. Each
-    // party has its own dedupe key so a replayed webhook can't double-count.
-    await recordTrustEvent({
-      userId: booking.student_id,
-      ruleKey: "transaction_completed",
-      sourceType: "booking",
-      sourceId: booking.id,
-      dedupeKey: `transaction-completed:${booking.id}:student`,
-      reason: "Booking completed",
-    });
-    await recordTrustEvent({
-      userId: booking.landlord_id,
-      ruleKey: "transaction_completed",
-      sourceType: "booking",
-      sourceId: booking.id,
-      dedupeKey: `transaction-completed:${booking.id}:landlord`,
-      reason: "Booking completed",
+    await completeBookingPayout({
+      bookingId: booking.id,
+      reference,
+      transferCode: transferCode ?? null,
+      reason: "transfer_success_webhook",
     });
   } else if (event.event === "transfer.failed" || event.event === "transfer.reversed") {
     const reason =
       data?.gateway_response ??
       data?.message ??
       (event.event === "transfer.reversed" ? "Transfer reversed" : "Transfer failed");
+
+    // A reversal that arrives AFTER the booking already completed means Paystack
+    // clawed the money back. Don't erase the completion audit; surface it for
+    // officer review instead and notify both the landlord and every officer.
+    if (event.event === "transfer.reversed" && booking.booking_status === "completed") {
+      await db.update(bookingsTable).set({ payout_error: String(reason), updated_at: new Date() }).where(eq(bookingsTable.id, booking.id));
+      await db.insert(auditLogTable).values({
+        actor_id: booking.landlord_id,
+        action_type: "escrow_payout_reversed_after_completion",
+        resource_type: "booking",
+        resource_id: booking.id,
+        details: { reference, transfer_code: transferCode ?? null, reason: String(reason) },
+      });
+      const officerIds = await getEscrowOfficers();
+      await Promise.all([
+        createNotification({ userId: booking.landlord_id, type: "system", title: "Payout reversed by bank", body: "A previously completed payout was reversed. Our team is reviewing it and will follow up.", relatedId: booking.id, relatedType: "booking" }),
+        ...officerIds.map((id) => createNotification({ userId: id, type: "system", title: "Payout reversal needs review", body: `A completed booking payout was reversed by Paystack/bank: ${String(reason)}.`, relatedId: booking.id, relatedType: "booking" })),
+      ]);
+      return new NextResponse(null, { status: 200 });
+    }
 
     if (booking.booking_status !== "release_pending") {
       // Don't regress a completed/held booking — just log + ack.

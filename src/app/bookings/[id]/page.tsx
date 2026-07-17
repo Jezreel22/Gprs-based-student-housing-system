@@ -43,6 +43,8 @@ function friendlyReleaseError(raw: string | null | undefined): string {  const l
   // Registered. Be honest about that rather than promising an officer will fix it.
   if (lower.includes("starter business") || lower.includes("third party payout") || lower.includes("transfer_unavailable"))
     return "Payouts are paused until the platform's Paystack account is upgraded to a Registered Business. This is being handled — no action needed from you, and your funds are safe.";
+  if (lower.includes("reversed") || lower.includes("reversal"))
+    return "The bank reversed a payout after it was sent. Our team is reviewing the transfer and will follow up — no action needed from you right now.";
   if (lower.includes("insufficient")) return "The platform balance couldn't cover the payout. An officer will retry shortly.";
   if (lower.includes("recipient") || lower.includes("account") || lower.includes("invalid"))
     return "The landlord's bank account couldn't be credited. An officer will review and follow up.";

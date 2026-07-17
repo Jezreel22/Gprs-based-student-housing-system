@@ -64,6 +64,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       amount_kobo: amountKobo,
       currency: "NGN",
       booking_id: booking.id,
+      metadata: { booking_id: booking.id },
     });
   } catch (err) {
     return handleError(err, req);
