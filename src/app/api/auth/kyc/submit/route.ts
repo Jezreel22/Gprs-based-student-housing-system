@@ -16,9 +16,8 @@ const KycSubmitSchema = z.object({
   // 0–100, computed client-side from face-presence + liveness checks. Required
   // so a static upload or a no-face frame can't pass. Server enforces a floor.
   face_confidence: z.number().min(0).max(100),
-  // Real identity anchor: BVN is resolved by Paystack but never persisted.
-  bvn: z.string().regex(/^\d{11}$/, "BVN must be 11 digits"),
-  // The same verified bank account becomes the Paystack payout destination.
+  // Real identity anchor: the landlord's own bank account. We resolve it via
+  // Paystack and require the registered name to match their profile name.
   bank_account_number: z.string().regex(/^\d{10}$/, "Account number must be 10 digits"),
   bank_code: z.string().min(2),
   property_document_url: z.string().min(1, "Property ownership document is required"),
@@ -55,11 +54,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2) Real identity check — Paystack resolves the BVN and the payout bank
-    //    account. Both names must match the landlord profile. Raw BVNs are
-    //    never persisted.
+    // 2) Real identity check — resolve the bank account against Paystack and
+    //    require the registered name to match the landlord's name. This is the
+    //    actual KYC: the name comes back from the bank, not from us.
     const identity = await verifyLandlordIdentity({
-      bvn: body.bvn,
       accountNumber: body.bank_account_number,
       bankCode: body.bank_code,
       firstName: user.first_name,

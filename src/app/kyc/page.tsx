@@ -99,7 +99,6 @@ export default function KYC() {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [bankCode, setBankCode] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
-  const [bvn, setBvn] = useState("");
   const [bankQuery, setBankQuery] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -256,9 +255,9 @@ export default function KYC() {
       setStep(2);
       return;
     }
-    if (!bvn || bvn.length !== 11 || !accountNumber || accountNumber.length !== 10 || !bankCode) {
-      toast({ variant: "destructive", title: "BVN and bank account required",
-              description: "Add your 11-digit BVN and a bank account registered in your own name so Paystack can verify your identity." });
+    if (!accountNumber || accountNumber.length !== 10 || !bankCode) {
+      toast({ variant: "destructive", title: "Bank account required",
+              description: "Add a bank account registered in your own name so Paystack can verify your identity." });
       setStep(3);
       return;
     }
@@ -272,7 +271,6 @@ export default function KYC() {
           national_id_document_url: idDocBase64,
           selfie_url: selfieBase64,
           face_confidence: faceConfidence,
-          bvn,
           bank_account_number: accountNumber,
           bank_code: bankCode,
           property_document_url: propDocBase64 ?? undefined,
@@ -609,18 +607,6 @@ export default function KYC() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium block mb-1.5">11-digit BVN</label>
-                  <input
-                    inputMode="numeric"
-                    maxLength={11}
-                    value={bvn}
-                    onChange={(e) => setBvn(e.target.value.replace(/\D/g, "").slice(0, 11))}
-                    placeholder="12345678901"
-                    className="w-full h-11 rounded-xl border border-[#EBEBEB] px-3 font-mono text-sm outline-none focus:border-primary"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1.5">Checked with Paystack and never stored by NAUB Homes.</p>
-                </div>
-                <div>
                   <label className="text-sm font-medium block mb-1.5">Payout bank</label>
                   <input
                     value={bankQuery}
@@ -652,12 +638,13 @@ export default function KYC() {
                     placeholder="0123456789"
                     className="w-full h-11 rounded-xl border border-[#EBEBEB] px-3 font-mono text-sm outline-none focus:border-primary"
                   />
+                  <p className="text-xs text-muted-foreground mt-1.5">Paystack confirms this account is registered in your own name.</p>
                 </div>
               </div>
 
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1 h-11 rounded-xl" onClick={() => setStep(2)}>Back</Button>
-                <Button className="flex-1 h-11 rounded-xl font-semibold" disabled={!bankCode || accountNumber.length !== 10 || bvn.length !== 11}
+                <Button className="flex-1 h-11 rounded-xl font-semibold" disabled={!bankCode || accountNumber.length !== 10}
                         style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
                         onClick={() => setStep(4)}>
                   Continue <ChevronRight className="h-4 w-4 ml-1" />

@@ -1,70 +1,60 @@
-import { resolveAccountNumber, resolveBvn } from "@/lib/paystack-server";
-
-function normaliseTokens(...names: Array<string | null | undefined>): string[] {
-  return names
-    .filter(Boolean)
-    .flatMap((name) => (name as string).toLowerCase().split(/\s+/))
-    .map((token) => token.replace(/[^a-z]/g, ""))
-    .filter((token) => token.length >= 3);
-}
-
-function namesMatch(expected: string[], actual: string[]): boolean {
-  return expected.some((token) => actual.some((candidate) => candidate.includes(token) || token.includes(candidate)));
-}
+import { resolveAccountNumber } from "@/lib/paystack-server";
 
 /**
- * Verify two independent real-world identity anchors:
- * - Paystack resolves the BVN against its identity-verification service.
- * - Paystack resolves the bank account against the receiving bank.
+ * Real identity check for landlord KYC: resolve the supplied bank account
+ * against Paystack (which hits the bank's real database) and require the
+ * returned registered account name to match the landlord's name.
  *
- * Both returned names must overlap the landlord profile name. Raw BVNs are
- * intentionally never returned or persisted.
+ * This is the opposite of a hardcoded approval — the name has to come back from
+ * the actual bank. We do a token-overlap match so middle names, initials, and
+ * "FIRST LAST" vs "LAST FIRST" ordering differences don't cause spurious
+ * rejections, while still requiring a real match.
+ *
+ * Returns `ok: true` on a match, otherwise `ok: false` with a human-readable
+ * `reason`.
  */
 export async function verifyLandlordIdentity(args: {
-  bvn: string;
   accountNumber: string;
   bankCode: string;
   firstName?: string | null;
   lastName?: string | null;
 }): Promise<{ ok: true; resolvedAccountName: string } | { ok: false; reason: string }> {
-  const profileTokens = normaliseTokens(args.firstName, args.lastName);
-  if (profileTokens.length === 0) {
-    return { ok: false, reason: "Add your first and last name on your profile before verifying." };
-  }
-
-  let bvnIdentity: { first_name: string | null; last_name: string | null };
+  let resolved: { account_name: string };
   try {
-    bvnIdentity = await resolveBvn(args.bvn);
-  } catch {
-    return {
-      ok: false,
-      reason: "We couldn't verify that BVN with Paystack. Check the 11 digits and use the BVN registered in your own name.",
-    };
-  }
-
-  if (!namesMatch(profileTokens, normaliseTokens(bvnIdentity.first_name, bvnIdentity.last_name))) {
-    return { ok: false, reason: "The BVN details don't match the name on your profile." };
-  }
-
-  let account: { account_name: string };
-  try {
-    account = await resolveAccountNumber({
+    resolved = await resolveAccountNumber({
       account_number: args.accountNumber,
       bank_code: args.bankCode,
     });
   } catch {
     return {
       ok: false,
-      reason: "We couldn't verify that bank account with Paystack. Double-check the account number and bank.",
+      reason:
+        "We couldn't verify that bank account with Paystack. Double-check the account number and bank — if it's correct, the bank may be temporarily unavailable.",
     };
   }
 
-  if (!namesMatch(profileTokens, normaliseTokens(account.account_name))) {
+  const resolvedName = (resolved.account_name ?? "").toLowerCase().trim();
+  if (!resolvedName) {
+    return { ok: false, reason: "Paystack returned no name for that account. Check the details and try again." };
+  }
+
+  const landlordTokens = [args.firstName, args.lastName]
+    .filter(Boolean)
+    .flatMap((n) => (n as string).toLowerCase().split(/\s+/))
+    .map((t) => t.replace(/[^a-z]/g, ""))
+    .filter((t) => t.length >= 3);
+
+  if (landlordTokens.length === 0) {
+    return { ok: false, reason: "Add your first and last name on your profile before verifying." };
+  }
+
+  const matched = landlordTokens.some((token) => resolvedName.includes(token));
+  if (!matched) {
     return {
       ok: false,
-      reason: `The name on that account ("${account.account_name}") doesn't match the name on your profile. Use an account registered in your own name.`,
+      reason: `The name on that account ("${resolved.account_name}") doesn't match the name on your profile. Use a bank account registered in your own name.`,
     };
   }
 
-  return { ok: true, resolvedAccountName: account.account_name };
+  return { ok: true, resolvedAccountName: resolved.account_name };
 }
