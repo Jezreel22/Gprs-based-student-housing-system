@@ -74,6 +74,7 @@ export interface AuthResponse {
 export interface TrustScore {
   user_id?: string;
   total_score?: number;
+  trust_level?: "highly_trusted" | "trusted" | "average" | "low_trust" | "high_risk";
   identity_verification_points?: number;
   property_verification_points?: number;
   transaction_completion_points?: number;

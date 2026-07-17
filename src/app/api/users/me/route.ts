@@ -6,6 +6,7 @@ import { usersTable, trustScoresTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, jsonResponse, parseBody } from "@/lib/api";
 import { formatTrustScore } from "@/lib/format";
+import { maybeAwardProfileCompletion } from "@/lib/trust/service";
 import type { UserPublicProfile } from "@/api/generated/api.schemas";
 
 export async function GET(req: NextRequest) {
@@ -61,6 +62,8 @@ export async function PUT(req: NextRequest) {
       .update(usersTable)
       .set({ ...body, updated_at: new Date() })
       .where(eq(usersTable.id, me.id));
+
+    await maybeAwardProfileCompletion(me.id);
 
     const [updated] = await db.select().from(usersTable).where(eq(usersTable.id, me.id)).limit(1);
     const [ts] = await db.select().from(trustScoresTable).where(eq(trustScoresTable.user_id, me.id)).limit(1);

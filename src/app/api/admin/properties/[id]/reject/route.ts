@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { propertiesTable, auditLogTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse, errorResponse } from "@/lib/api";
+import { recordTrustEvent } from "@/lib/trust/service";
 
 const RejectBody = z.object({ reason: z.string().min(5) });
 
@@ -28,6 +29,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       action_type: "property_rejected",
       resource_type: "property",
       resource_id: id,
+      details: { reason: body.reason },
+    });
+
+    await recordTrustEvent({
+      userId: p.landlord_id,
+      ruleKey: "fake_property_listing",
+      sourceType: "property",
+      sourceId: id,
+      dedupeKey: `fake-listing:${id}`,
+      actorId: officer.id,
+      reason: "Property rejected as fake or non-compliant",
       details: { reason: body.reason },
     });
 

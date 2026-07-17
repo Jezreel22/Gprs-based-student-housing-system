@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { usersTable, trustScoresTable } from "@/lib/db/schema";
+import { maybeAwardProfileCompletion } from "@/lib/trust/service";
 import { requireAuth } from "@/lib/auth";
 import { handleError, jsonResponse, parseBody } from "@/lib/api";
 import { formatTrustScore } from "@/lib/format";
@@ -56,6 +57,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     await db.update(usersTable)
       .set({ ...body, updated_at: new Date() })
       .where(eq(usersTable.id, id));
+
+    await maybeAwardProfileCompletion(id);
 
     const [updated] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
     return jsonResponse({ message: "Updated", user: updated });

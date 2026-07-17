@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { bookingsTable, disputesTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse, errorResponse } from "@/lib/api";
+import { recordTrustEvent } from "@/lib/trust/service";
 
 const FileDisputeBody = z.object({
   reason: z.enum(["property_mismatch", "occupancy_not_verified", "unresponsive", "safety_concern", "other"]),
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       reason: body.reason,
       description: body.description,
       dispute_status: "open",
-    });
+    }).returning();
 
     await db.update(bookingsTable)
       .set({
@@ -44,6 +45,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         updated_at: new Date(),
       })
       .where(eq(bookingsTable.id, id));
+
+    await recordTrustEvent({
+      userId: booking.landlord_id,
+      ruleKey: "transaction_dispute",
+      sourceType: "booking",
+      sourceId: id,
+      dedupeKey: `dispute:${id}`,
+      actorId: me.id,
+      details: { reason: body.reason, filed_by: "student" },
+    });
 
     return jsonResponse({ message: "Dispute filed. Escrow Officer will review within 5 business days." }, { status: 201 });
   } catch (err) {

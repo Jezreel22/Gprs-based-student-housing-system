@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, uuid, jsonb, real, date, check, customType } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, uuid, jsonb, real, date, check, customType, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Drizzle 0.45 has no first-class `bytea` column, so we declare one. The
@@ -41,6 +41,10 @@ export const usersTable = pgTable("users", {
   sponsoring_landlord_id: uuid("sponsoring_landlord_id"),
 
   verification_status: text("verification_status").default("pending"),
+  email_verified_at: timestamp("email_verified_at"),
+  phone_verified_at: timestamp("phone_verified_at"),
+  profile_completed_at: timestamp("profile_completed_at"),
+  cancellation_count: integer("cancellation_count").default(0),
   account_suspended: boolean("account_suspended").default(false),
   suspension_reason: text("suspension_reason"),
 
@@ -227,7 +231,8 @@ export const trustScoresTable = pgTable("trust_scores", {
   id: uuid("id").primaryKey().defaultRandom(),
   user_id: uuid("user_id").notNull().unique().references(() => usersTable.id, { onDelete: "cascade" }),
 
-  total_score: integer("total_score").default(0),
+  total_score: integer("total_score").default(50),
+  trust_level: text("trust_level").default("average"),
 
   identity_verification_points: integer("identity_verification_points").default(0),
   property_verification_points: integer("property_verification_points").default(0),
@@ -243,6 +248,66 @@ export const trustScoresTable = pgTable("trust_scores", {
 
   last_recomputed_at: timestamp("last_recomputed_at").defaultNow(),
 });
+
+// ─── trust events ──────────────────────────────────────────────────────────
+// Immutable scoring ledger. `trust_scores` is a fast projection of these rows;
+// the ledger remains the source of truth and makes replay/backfill safe.
+export const trustEventsTable = pgTable("trust_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  rule_key: text("rule_key").notNull(),
+  points_delta: integer("points_delta").notNull(),
+  source_type: text("source_type").notNull(),
+  source_id: text("source_id"),
+  dedupe_key: text("dedupe_key").notNull().unique(),
+  actor_id: uuid("actor_id").references(() => usersTable.id, { onDelete: "set null" }),
+  reason: text("reason").notNull(),
+  details: jsonb("details").$type<Record<string, unknown>>(),
+  active: boolean("active").default(true).notNull(),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("trust_events_user_created_idx").on(table.user_id, table.created_at),
+  index("trust_events_rule_created_idx").on(table.rule_key, table.created_at),
+  index("trust_events_source_idx").on(table.source_type, table.source_id),
+]);
+
+// ─── trust reports ─────────────────────────────────────────────────────────
+// Reports are not trust penalties until an escrow officer substantiates them.
+export const trustReportsTable = pgTable("trust_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reporter_id: uuid("reporter_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  target_user_id: uuid("target_user_id").references(() => usersTable.id, { onDelete: "cascade" }),
+  target_property_id: uuid("target_property_id").references(() => propertiesTable.id, { onDelete: "cascade" }),
+  report_type: text("report_type").notNull(),
+  description: text("description").notNull(),
+  status: text("status").default("open").notNull(),
+  officer_id: uuid("officer_id").references(() => usersTable.id, { onDelete: "set null" }),
+  officer_notes: text("officer_notes"),
+  resolved_at: timestamp("resolved_at"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("trust_reports_target_user_status_idx").on(table.target_user_id, table.status),
+  index("trust_reports_target_property_status_idx").on(table.target_property_id, table.status),
+  index("trust_reports_status_created_idx").on(table.status, table.created_at),
+]);
+
+// ─── verification challenges ───────────────────────────────────────────────
+// Provider-neutral, single-use challenge records. Token/OTP plaintext is never
+// stored; service code hashes it before insertion.
+export const verificationChallengesTable = pgTable("verification_challenges", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  user_id: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  channel: text("channel").notNull(),
+  destination: text("destination").notNull(),
+  token_hash: text("token_hash").notNull(),
+  expires_at: timestamp("expires_at").notNull(),
+  consumed_at: timestamp("consumed_at"),
+  attempt_count: integer("attempt_count").default(0).notNull(),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("verification_challenges_user_channel_created_idx").on(table.user_id, table.channel, table.created_at),
+  index("verification_challenges_destination_expires_idx").on(table.destination, table.expires_at),
+]);
 
 // ─── audit_log ─────────────────────────────────────────────────────────────
 export const auditLogTable = pgTable("audit_log", {
@@ -294,6 +359,12 @@ export type Rating = typeof ratingsTable.$inferSelect;
 export type NewRating = typeof ratingsTable.$inferInsert;
 export type TrustScore = typeof trustScoresTable.$inferSelect;
 export type NewTrustScore = typeof trustScoresTable.$inferInsert;
+export type TrustEvent = typeof trustEventsTable.$inferSelect;
+export type NewTrustEvent = typeof trustEventsTable.$inferInsert;
+export type TrustReport = typeof trustReportsTable.$inferSelect;
+export type NewTrustReport = typeof trustReportsTable.$inferInsert;
+export type VerificationChallenge = typeof verificationChallengesTable.$inferSelect;
+export type NewVerificationChallenge = typeof verificationChallengesTable.$inferInsert;
 export type AuditLog = typeof auditLogTable.$inferSelect;
 export type NewAuditLog = typeof auditLogTable.$inferInsert;
 export type Notification = typeof notificationsTable.$inferSelect;
@@ -309,6 +380,9 @@ export const schema = {
   messagesTable,
   ratingsTable,
   trustScoresTable,
+  trustEventsTable,
+  trustReportsTable,
+  verificationChallengesTable,
   auditLogTable,
   notificationsTable,
 };

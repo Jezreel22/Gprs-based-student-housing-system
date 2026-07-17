@@ -5,6 +5,8 @@ import { db } from "@/lib/db";
 import { ratingsTable, bookingsTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse, errorResponse, getQueryParams, getIntParam } from "@/lib/api";
+import { recordTrustEvent } from "@/lib/trust/service";
+import { trustRuleForRating } from "@/lib/trust/rules";
 import type { RatingDetail } from "@/api/generated/api.schemas";
 
 const CreateRatingBody = z.object({
@@ -63,6 +65,19 @@ export async function POST(req: NextRequest) {
       stars: body.stars,
       review_text: body.review_text ?? null,
     }).returning();
+
+    const ruleKey = trustRuleForRating(body.stars);
+    if (ruleKey) {
+      await recordTrustEvent({
+        userId: body.ratee_id,
+        ruleKey,
+        sourceType: "rating",
+        sourceId: rating.id,
+        dedupeKey: `rating:${rating.id}`,
+        actorId: me.id,
+        details: { stars: body.stars },
+      });
+    }
 
     return jsonResponse(rating, { status: 201 });
   } catch (err) {

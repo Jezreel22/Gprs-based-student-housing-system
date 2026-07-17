@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
@@ -6,6 +7,7 @@ import { usersTable, auditLogTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse, errorResponse } from "@/lib/api";
 import { createNotification } from "@/lib/notify";
+import { recordTrustEvent } from "@/lib/trust/service";
 import { verifyLandlordIdentity } from "@/lib/kyc";
 import { createTransferRecipient } from "@/lib/paystack-server";
 
@@ -40,11 +42,13 @@ export async function POST(req: NextRequest) {
     //    detect a live face in is rejected outright — no amount of uploaded
     //    bytes bypasses this.
     if (body.face_confidence < FACE_CONFIDENCE_FLOOR) {
-      await db.insert(auditLogTable).values({
-        actor_id: user.id,
-        action_type: "kyc_face_check_failed",
-        resource_type: "user",
-        resource_id: user.id,
+      await recordTrustEvent({
+        userId: user.id,
+        ruleKey: "failed_identity_verification",
+        sourceType: "kyc_attempt",
+        sourceId: randomUUID(),
+        dedupeKey: `kyc-face-failed:${user.id}:${randomUUID()}`,
+        actorId: user.id,
         details: { face_confidence: body.face_confidence },
       });
       return errorResponse(
@@ -64,11 +68,13 @@ export async function POST(req: NextRequest) {
       lastName: user.last_name,
     });
     if (!identity.ok) {
-      await db.insert(auditLogTable).values({
-        actor_id: user.id,
-        action_type: "kyc_identity_check_failed",
-        resource_type: "user",
-        resource_id: user.id,
+      await recordTrustEvent({
+        userId: user.id,
+        ruleKey: "failed_identity_verification",
+        sourceType: "kyc_attempt",
+        sourceId: randomUUID(),
+        dedupeKey: `kyc-identity-failed:${user.id}:${randomUUID()}`,
+        actorId: user.id,
         details: { reason: identity.reason },
       });
       return errorResponse(identity.reason, 422, { code: "identity_check_failed" });
@@ -130,6 +136,16 @@ export async function POST(req: NextRequest) {
       type: "system",
       title: "You're verified ✅",
       body: "Your identity is verified. You can now list properties and receive bookings.",
+    });
+
+    await recordTrustEvent({
+      userId: user.id,
+      ruleKey: "government_id_verified",
+      sourceType: "user",
+      sourceId: user.id,
+      dedupeKey: `government-id:${user.id}`,
+      actorId: user.id,
+      reason: "Government ID verified via KYC",
     });
 
     return jsonResponse({ message: "Identity verified", status: "verified" });

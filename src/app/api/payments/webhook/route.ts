@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { bookingsTable, auditLogTable } from "@/lib/db/schema";
 import { verifyWebhookSignature } from "@/lib/paystack-server";
 import { markBookingPaidByReference } from "@/lib/payment-marks";
+import { recordTrustEvent } from "@/lib/trust/service";
 
 // Force Node.js so we can use `crypto.createHmac` (the App Router also runs
 // on Node by default, but this is explicit and protects against accidental
@@ -112,6 +113,25 @@ async function handleTransferEvent(event: any) {
       resource_type: "booking",
       resource_id: booking.id,
       details: { reference, transfer_code: transferCode ?? null },
+    });
+
+    // Successful completed transaction — both participants earn trust. Each
+    // party has its own dedupe key so a replayed webhook can't double-count.
+    await recordTrustEvent({
+      userId: booking.student_id,
+      ruleKey: "transaction_completed",
+      sourceType: "booking",
+      sourceId: booking.id,
+      dedupeKey: `transaction-completed:${booking.id}:student`,
+      reason: "Booking completed",
+    });
+    await recordTrustEvent({
+      userId: booking.landlord_id,
+      ruleKey: "transaction_completed",
+      sourceType: "booking",
+      sourceId: booking.id,
+      dedupeKey: `transaction-completed:${booking.id}:landlord`,
+      reason: "Booking completed",
     });
   } else if (event.event === "transfer.failed" || event.event === "transfer.reversed") {
     const reason =

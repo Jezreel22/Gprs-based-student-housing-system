@@ -18,12 +18,13 @@ export function formatTrustScore(row: {
   completed_transactions?: number | null;
   average_rating?: number | null;
   fraud_reports_count?: number | null;
+  trust_level?: string | null;
   last_recomputed_at?: Date | null;
 } | null | undefined): TrustScore | undefined {
   if (!row) return undefined;
   return {
     user_id: row.user_id ?? undefined,
-    total_score: row.total_score ?? 0,
+    total_score: row.total_score ?? 50,
     identity_verification_points: row.identity_verification_points ?? 0,
     property_verification_points: row.property_verification_points ?? 0,
     transaction_completion_points: row.transaction_completion_points ?? 0,
@@ -34,6 +35,7 @@ export function formatTrustScore(row: {
     completed_transactions: row.completed_transactions ?? 0,
     average_rating: row.average_rating ?? 0,
     fraud_reports_count: row.fraud_reports_count ?? 0,
+    trust_level: row.trust_level === "highly_trusted" || row.trust_level === "trusted" || row.trust_level === "average" || row.trust_level === "low_trust" || row.trust_level === "high_risk" ? row.trust_level : "average",
     last_recomputed_at: row.last_recomputed_at?.toISOString() ?? null,
   };
 }
