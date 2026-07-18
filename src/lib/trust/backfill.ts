@@ -42,7 +42,13 @@ async function main() {
       });
       count("phone_verified", r.inserted);
     }
-    if (user.verification_status === "verified" && user.national_id_verified_at) {
+    // Government ID: a verified landlord/agent has been through KYC. We key off
+    // `verification_status` rather than `national_id_verified_at` because seed
+    // data and earlier admin verifications mark users verified without stamping
+    // the timestamp — without this, verified landlords sat at 55 forever.
+    // Students are excluded: they don't go through KYC, so the rule doesn't
+    // apply to them.
+    if (user.verification_status === "verified" && ["landlord", "agent"].includes(user.role)) {
       const r = await recordTrustEvent({
         userId: user.id,
         ruleKey: "government_id_verified",
