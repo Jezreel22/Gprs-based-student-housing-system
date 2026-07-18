@@ -9,6 +9,7 @@ import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
 import PayoutDetailsCard from "@/components/PayoutDetailsCard";
 import AvatarUploader from "@/components/AvatarUploader";
+import TrustCard from "@/components/TrustCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -176,6 +177,15 @@ export default function Dashboard() {
             )}
             <Button variant="outline" onClick={handleLogout}>Log out</Button>
           </div>
+        </div>
+
+        {/* Trust score — visible to every role so the system isn't a black box. */}
+        <div className="mb-8">
+          <TrustCard
+            userId={user.id}
+            role={user.role}
+            verificationStatus={user.verification_status}
+          />
         </div>
 
         {/* Active booking banner (students) */}
