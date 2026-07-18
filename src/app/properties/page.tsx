@@ -29,6 +29,8 @@ function PropertiesPage() {
     page,
     page_size: 12,
   };
+  const q = params.get("q");
+  if (q) queryParams.q = q;
   if (rentMin > 0) queryParams.rent_min = rentMin;
   if (rentMax < 200000) queryParams.rent_max = rentMax;
   if (rooms && rooms !== "any") queryParams.rooms = parseInt(rooms);

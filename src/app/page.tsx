@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { getGetPropertiesQueryOptions } from "@/api";
 import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
@@ -17,17 +17,27 @@ import {
 } from "lucide-react";
 
 const STATS = [
-  { value: "1,200+", label: "Student Residents" },
-  { value: "320+", label: "Verified Landlords" },
-  { value: "500+", label: "Active Listings" },
+  { value: "200+", label: "Student Residents" },
+  { value: "100+", label: "Verified Landlords" },
+  { value: "50+", label: "Active Listings" },
   { value: "4.8/5", label: "Average Rating" },
 ];
 
-const CATEGORIES = [
-  { label: "Self-Contained", icon: HomeIcon, href: "/properties?type=self_contained" },
-  { label: "Single Room", icon: Bed, href: "/properties?rooms=1" },
-  { label: "2 Bedroom", icon: Building2, href: "/properties?rooms=2" },
-  { label: "Furnished", icon: Wifi, href: "/properties?furnished=true" },
+// The four "Browse by Type" cards. `query` is sent to GET /api/properties so
+// the card can show the live count. Empty `query` keeps the static "All"
+// fallback in case the API call is slow. `furnished` is widened to string
+// here and coerced to a boolean at the route — keeps the type uniform across
+// the four cards so a single hook can fan out to them.
+const CATEGORIES: Array<{
+  label: string;
+  icon: typeof HomeIcon;
+  href: string;
+  query: Record<string, string | number>;
+}> = [
+  { label: "Self-Contained", icon: HomeIcon, href: "/properties?type=self_contained", query: { type: "self_contained" } },
+  { label: "Single Room",    icon: Bed,       href: "/properties?rooms=1",            query: { rooms: 1 } },
+  { label: "2 Bedroom",      icon: Building2, href: "/properties?rooms=2",            query: { rooms: 2 } },
+  { label: "Furnished",      icon: Wifi,      href: "/properties?furnished=true",    query: { furnished: 1 } },
 ];
 
 const CORE_FEATURES = [
@@ -114,6 +124,14 @@ export default function Home() {
 
   const featured = propertiesData?.data ?? [];
 
+  // Live counts for the "Browse by Type" cards. We only care about `total`,
+  // so each query asks for one row — keeps the response payload tiny while
+  // still giving us an exact live count.
+  const categoryCounts = useQueries({
+    queries: CATEGORIES.map((c) => getGetPropertiesQueryOptions({ ...c.query, page: 1, page_size: 1 })),
+    combine: (results) => results.map((r) => r.data?.total ?? 0),
+  });
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     router.push(`/properties${searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ""}`);
@@ -195,19 +213,25 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-4">
           <h2 className="text-2xl font-bold text-foreground mb-8">Browse by Type</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {CATEGORIES.map(cat => (
-              <Link key={cat.label} href={cat.href}>
-                <div className="flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border border-[#EBEBEB] bg-[#FAFAFA] hover:border-primary hover:shadow-md transition-all cursor-pointer group h-full">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
-                    style={{ background: "#FFF0F0" }}
-                  >
-                    <cat.icon className="h-6 w-6 text-primary" />
+            {CATEGORIES.map((cat, i) => {
+              const count = categoryCounts[i];
+              return (
+                <Link key={cat.label} href={cat.href}>
+                  <div className="flex flex-col items-center justify-center gap-2 p-6 rounded-2xl border border-[#EBEBEB] bg-[#FAFAFA] hover:border-primary hover:shadow-md transition-all cursor-pointer group h-full">
+                    <div
+                      className="w-12 h-12 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform"
+                      style={{ background: "#FFF0F0" }}
+                    >
+                      <cat.icon className="h-6 w-6 text-primary" />
+                    </div>
+                    <span className="text-sm font-semibold text-foreground">{cat.label}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {count > 0 ? `${count} ${count === 1 ? "listing" : "listings"}` : "—"}
+                    </span>
                   </div>
-                  <span className="text-sm font-semibold text-foreground">{cat.label}</span>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         </div>
       </section>

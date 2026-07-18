@@ -10,7 +10,8 @@ import type { PropertyDetail, RatingDetail } from "@/api/generated/api.schemas";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    await requireAuth(req);
+    // Public so logged-out visitors can open a listing from search/cards.
+    // Write paths (PUT/DELETE) below still require auth.
     const { id } = await params;
 
     const [property] = await db.select().from(propertiesTable).where(eq(propertiesTable.id, id)).limit(1);
