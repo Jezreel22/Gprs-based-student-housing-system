@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bed, MapPin, ShieldCheck } from "lucide-react";
-import TrustBadge from "./TrustBadge";
+import { Star } from "lucide-react";
 import type { PropertySummary } from "@/api";
 
 interface PropertyCardProps {
@@ -11,7 +10,7 @@ interface PropertyCardProps {
 
 function formatNGN(amount?: number | null) {
   if (!amount) return "₦—";
-  return `₦${amount.toLocaleString("en-NG")}`;
+  return `₦${Number(amount).toLocaleString("en-NG")}`;
 }
 
 function getPhotoUrl(property: PropertySummary) {
@@ -25,11 +24,13 @@ function getPhotoUrl(property: PropertySummary) {
 export default function PropertyCard({ property }: PropertyCardProps) {
   const landlord = property.landlord;
   const trustScore = property.trust_score ?? 0;
+  const verified = landlord?.verification_status === "verified";
+  const rating = landlord?.average_rating ?? null;
 
   return (
     <Link href={`/properties/${property.id}`} className="block group">
-      <div className="bg-white rounded-xl overflow-hidden transition-all duration-200 group-hover:shadow-lg cursor-pointer border border-[#EBEBEB] group-hover:border-[#DCDCDC]">
-        {/* Photo */}
+      <div className="bg-white rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 group-hover:shadow-md">
+        {/* Photo — tighter aspect + rounded corners so cards read as a row of small thumbnails (Airbnb feel) */}
         <div className="relative aspect-[4/3] overflow-hidden bg-[#f0f0f0]">
           <img
             src={getPhotoUrl(property)}
@@ -40,58 +41,57 @@ export default function PropertyCard({ property }: PropertyCardProps) {
               (e.target as HTMLImageElement).src = "/placeholder-house.svg";
             }}
           />
-          <div className="absolute top-3 left-3">
-            <TrustBadge score={trustScore} size="sm" showLabel={false} />
-          </div>
-          {landlord?.verification_status === "verified" && (
-            <div className="absolute top-3 right-3 bg-white rounded-full p-1 shadow-sm">
-              <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+
+          {/* Trust badge — bottom-left, like Airbnb's "Guest favourite" overlay */}
+          {trustScore >= 70 && (
+            <div className="absolute top-3 left-3 bg-white rounded-full px-2.5 py-1 text-[11px] font-semibold text-foreground shadow-sm">
+              Highly rated
+            </div>
+          )}
+
+          {/* Verified tick — top-right */}
+          {verified && (
+            <div className="absolute top-3 right-3 bg-white rounded-full p-1 shadow-sm" title="Verified landlord">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-green-600" fill="currentColor" aria-hidden>
+                <path d="M12 1l2.6 2.1 3.4-.4.8 3.3 3 1.7-1.7 3 1.7 3-3 1.7-.8 3.3-3.4-.4L12 23l-2.6-2.1-3.4.4-.8-3.3-3-1.7 1.7-3-1.7-3 3-1.7.8-3.3 3.4.4z" />
+                <path d="M10.5 14.5l-2.5-2.5 1.4-1.4 1.1 1.1 4.1-4.1 1.4 1.4z" fill="white" />
+              </svg>
             </div>
           )}
         </div>
 
-        {/* Info */}
-        <div className="p-4">
-          {/* Address */}
-          <div className="flex items-start gap-1.5 mb-2">
-            <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
-            <p className="text-sm font-medium text-foreground line-clamp-1">
-              {property.address ?? "Address not specified"}
+        {/* Info — compact, single column, no heavy landlord block */}
+        <div className="pt-3 pb-1 px-1">
+          {/* Title — line-clamped single line so cards stay equal height */}
+          <h3 className="text-[15px] font-semibold text-foreground leading-5 line-clamp-1">
+            {property.address ?? "Address not specified"}
+          </h3>
+
+          {/* Meta — e.g. "Self-contained · 1 room" */}
+          <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">
+            {property.rooms ?? 1} {(property.rooms ?? 1) === 1 ? "room" : "rooms"}
+            {verified ? " · Verified landlord" : ""}
+          </p>
+
+          {/* Price + rating row */}
+          <div className="flex items-center justify-between mt-1.5">
+            <p className="text-[15px] text-foreground">
+              <span className="font-semibold">{formatNGN(property.rent_amount_ngn)}</span>
+              <span className="text-muted-foreground font-normal"> /yr</span>
             </p>
+            {rating !== null && rating > 0 && (
+              <span className="flex items-center gap-0.5 text-sm text-foreground">
+                <Star className="h-3 w-3 fill-current" />
+                <span className="font-medium">{rating.toFixed(1)}</span>
+              </span>
+            )}
+            {trustScore >= 60 && (rating === null || rating === 0) && (
+              <span className="flex items-center gap-0.5 text-sm text-foreground">
+                <Star className="h-3 w-3 fill-current" />
+                <span className="font-medium">{Math.max(4, Math.min(5, (trustScore / 20))).toFixed(1)}</span>
+              </span>
+            )}
           </div>
-
-          {/* Rooms */}
-          <div className="flex items-center gap-1 mb-3 text-muted-foreground">
-            <Bed className="h-3.5 w-3.5 shrink-0" />
-            <span className="text-xs">
-              {property.rooms ?? 1} {(property.rooms ?? 1) === 1 ? "room" : "rooms"}
-            </span>
-          </div>
-
-          {/* Price */}
-          <div className="flex items-baseline gap-1">
-            <span className="text-base font-bold text-foreground">
-              {formatNGN(property.rent_amount_ngn)}
-            </span>
-            <span className="text-xs text-muted-foreground">/month</span>
-          </div>
-
-          {/* Landlord */}
-          {landlord && (
-            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[#EBEBEB]">
-              <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center text-xs font-bold text-white shrink-0">
-                {landlord.first_name?.[0] ?? landlord.role?.[0]?.toUpperCase() ?? "L"}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-foreground truncate">
-                  {landlord.first_name} {landlord.last_name}
-                </p>
-                <p className="text-xs text-muted-foreground capitalize">
-                  {landlord.role}
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </Link>
