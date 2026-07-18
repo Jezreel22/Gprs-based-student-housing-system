@@ -104,6 +104,22 @@ export default function Admin() {
     }
   }
 
+  // Managed-escrow disbursement: the officer confirms the manual bank transfer
+  // to the landlord was actually sent. Only meaningful for `release_pending`
+  // rows (tenant already approved).
+  async function markDisbursed(id: string) {
+    setEscrowBusy(id);
+    try {
+      const res = await customFetch<{ message: string }>(`/api/bookings/${id}/mark-disbursed`, { method: "POST" });
+      toast({ title: res.message ?? "Marked as disbursed" });
+      refetchEscrow();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Failed", description: e?.message ?? "Try again" });
+    } finally {
+      setEscrowBusy(null);
+    }
+  }
+
   const pendingProps = (pendingPropsData as any)?.data ?? [];
 
   const approveMutation = useApproveVerification();
@@ -437,6 +453,8 @@ export default function Admin() {
                 {escrowBookings.map((b: any) => {
                   const status = b.booking_status;
                   const color = status === "release_pending" ? "#1565C0" : status === "release_failed" ? "#C62828" : "#F57F17";
+                  const awaitingDisbursement = status === "release_pending";
+                  const hasBank = Boolean(b.landlord_account_number && b.landlord_bank_code);
                   return (
                     <div key={b.id} className="bg-white rounded-2xl border border-[#EBEBEB] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="min-w-0">
@@ -469,19 +487,42 @@ export default function Admin() {
                             </span>
                           )}
                         </div>
+                        {/* Disbursement target for managed-escrow payouts. */}
+                        {awaitingDisbursement && (
+                          hasBank ? (
+                            <div className="mt-2 inline-flex flex-wrap items-center gap-x-3 gap-y-1 text-xs bg-blue-50 border border-blue-100 rounded-md px-2.5 py-1.5">
+                              <span className="font-medium text-blue-900">Pay to:</span>
+                              <span className="font-mono text-blue-900">{b.landlord_account_number}</span>
+                              <span className="text-blue-700">{b.landlord_account_name ?? ""}</span>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-amber-700 mt-1.5">Landlord hasn't set payout bank details — disbursement blocked.</p>
+                          )
+                        )}
                         {b.payout_error && (
                           <p className="text-xs text-red-600 mt-1">Last error: {b.payout_error}</p>
                         )}
                       </div>
                       <div className="flex gap-2 shrink-0">
-                        <Button
-                          size="sm"
-                          disabled={escrowBusy === b.id}
-                          onClick={() => releaseEscrowNow(b.id)}
-                          style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
-                        >
-                          {escrowBusy === b.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Release now"}
-                        </Button>
+                        {awaitingDisbursement ? (
+                          <Button
+                            size="sm"
+                            disabled={escrowBusy === b.id || !hasBank}
+                            onClick={() => markDisbursed(b.id)}
+                            style={{ background: "#16A34A", color: "#fff", border: "none" }}
+                          >
+                            {escrowBusy === b.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark disbursed"}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={escrowBusy === b.id}
+                            onClick={() => releaseEscrowNow(b.id)}
+                            style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+                          >
+                            {escrowBusy === b.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Release now"}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"

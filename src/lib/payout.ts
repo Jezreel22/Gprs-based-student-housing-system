@@ -2,13 +2,30 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookingsTable, usersTable, auditLogTable } from "@/lib/db/schema";
 import { amountToKobo, createTransferRecipient, initiateTransfer, resolveAccountNumber } from "@/lib/paystack-server";
-import { createNotification } from "@/lib/notify";
+import { createNotification, getEscrowOfficers } from "@/lib/notify";
 import { completeBookingPayout } from "@/lib/payment-marks";
 
 function formatNGN(n?: number | null): string {
   if (!n) return "₦0";
   return `₦${n.toLocaleString("en-NG")}`;
 }
+
+/**
+ * Disbursement mode.
+ *
+ * - `managed` (default): the platform holds the charge in its Paystack balance
+ *   and the platform owner pays the landlord by manual bank transfer after the
+ *   student approves. The app records the approval and queues the payout; an
+ *   officer confirms disbursement via /api/bookings/[id]/mark-disbursed. This
+ *   is real held-funds escrow that works on a Paystack Starter account, which
+ *   cannot use the third-party Transfer API.
+ *
+ * - `transfer`: the app initiates a Paystack transfer to the landlord's
+ *   recipient automatically once the student approves. Requires the Paystack
+ *   account to be a Registered Business (Starter accounts are blocked from
+ *   third-party payouts). Set ESCROW_DISBURSEMENT_MODE=transfer after upgrade.
+ */
+const DISBURSEMENT_MODE = (process.env.ESCROW_DISBURSEMENT_MODE ?? "managed").toLowerCase() === "transfer" ? "transfer" : "managed";
 
 /**
  * Escrow release + lazy auto-release helpers.
@@ -57,7 +74,7 @@ export interface ReleaseOptions {
 export async function releaseBookingEscrow(
   bookingId: string,
   opts: ReleaseOptions,
-): Promise<{ idempotent: boolean; reference?: string }> {
+): Promise<{ idempotent: boolean; reference?: string; mode?: "managed" | "transfer" }> {
   const [booking] = await db
     .select()
     .from(bookingsTable)
@@ -94,6 +111,64 @@ export async function releaseBookingEscrow(
     .where(eq(usersTable.id, booking.landlord_id))
     .limit(1);
   if (!landlord) throw new PayoutError("not_found", "Landlord not found");
+
+  // Platform-managed escrow: record the student's approval and queue the payout
+  // for manual disbursement. No Paystack transfer is attempted — the platform
+  // owner pays the landlord from the settled balance and confirms via
+  // /api/bookings/[id]/mark-disbursed. This is the default and the only mode a
+  // Starter Paystack account can actually complete.
+  if (DISBURSEMENT_MODE === "managed") {
+    await db
+      .update(bookingsTable)
+      .set({
+        booking_status: "release_pending",
+        payout_initiated_at: new Date(),
+        payout_error: null,
+        updated_at: new Date(),
+      })
+      .where(eq(bookingsTable.id, bookingId));
+
+    await db.insert(auditLogTable).values({
+      actor_id: landlord.id,
+      action_type: "escrow_release_approved",
+      resource_type: "booking",
+      resource_id: booking.id,
+      details: { mode: "managed", actor: opts.actorId, reason: opts.reason ?? (opts.force ? "officer_override" : "student_approved") },
+    });
+
+    const amount = formatNGN(booking.total_amount_ngn);
+    const officerIds = await getEscrowOfficers();
+    await Promise.all([
+      createNotification({
+        userId: landlord.id,
+        type: "escrow_release",
+        title: "Payout approved",
+        body: `Your tenant approved the release of ${amount}. It'll be sent to your bank account shortly.`,
+        relatedId: booking.id,
+        relatedType: "booking",
+      }),
+      createNotification({
+        userId: booking.student_id,
+        type: "system",
+        title: "Release approved",
+        body: `You approved releasing ${amount} to the landlord.`,
+        relatedId: booking.id,
+        relatedType: "booking",
+      }),
+      ...officerIds.map((officerId) =>
+        createNotification({
+          userId: officerId,
+          type: "system",
+          title: "Payout ready to disburse",
+          body: `${amount} approved by the tenant — ready for manual disbursement to the landlord's bank account.`,
+          relatedId: booking.id,
+          relatedType: "booking",
+        }),
+      ),
+    ]);
+
+    return { idempotent: false, mode: "managed" as const };
+  }
 
   // Legacy landlords (verified before recipient creation was added, or whose
   // recipient lives on the wrong account after a key rotation) can reach release

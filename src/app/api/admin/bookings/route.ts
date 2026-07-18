@@ -45,7 +45,10 @@ export async function GET(req: NextRequest) {
         ? db.select().from(propertiesTable).where(inArray(propertiesTable.id, propertyIds))
         : Promise.resolve([]),
       userIds.length
-        ? db.select({ id: usersTable.id, first_name: usersTable.first_name, last_name: usersTable.last_name, email: usersTable.email }).from(usersTable).where(inArray(usersTable.id, userIds))
+        ? db.select({
+            id: usersTable.id, first_name: usersTable.first_name, last_name: usersTable.last_name, email: usersTable.email,
+            payout_bank_code: usersTable.payout_bank_code, payout_account_number: usersTable.payout_account_number, payout_account_name: usersTable.payout_account_name,
+          }).from(usersTable).where(inArray(usersTable.id, userIds))
         : Promise.resolve([]),
     ]);
 
@@ -66,6 +69,11 @@ export async function GET(req: NextRequest) {
           occupancy_code: prop?.occupancy_code ?? null,
           student_name: student ? `${student.first_name ?? ""} ${student.last_name ?? ""}`.trim() : null,
           landlord_name: landlord ? `${landlord.first_name ?? ""} ${landlord.last_name ?? ""}`.trim() : null,
+          // Bank details so the officer can make the manual disbursement in
+          // managed mode. Null until the landlord sets payout details / KYC.
+          landlord_bank_code: landlord?.payout_bank_code ?? null,
+          landlord_account_number: landlord?.payout_account_number ?? null,
+          landlord_account_name: landlord?.payout_account_name ?? null,
           funds_received_at: b.funds_received_at?.toISOString() ?? null,
           occupancy_confirmed_at: b.occupancy_confirmed_by_student_at?.toISOString() ?? null,
           payout_transfer_reference: b.payout_transfer_reference ?? null,

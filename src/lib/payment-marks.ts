@@ -72,6 +72,76 @@ export async function completeBookingPayout(args: {
 }
 
 /**
+ * Officer confirmation that a platform-managed disbursement was actually sent
+ * (the platform owner made the manual bank transfer to the landlord). Flips a
+ * `release_pending` booking to `completed` and records audit + trust events.
+ * Used only in managed mode; in transfer mode the webhook is the source of
+ * truth. Idempotent via the `release_pending` state guard.
+ */
+export async function markBookingDisbursed(args: {
+  bookingId: string;
+  officerId: string;
+  reference?: string | null;
+}): Promise<boolean> {
+  const result = await db
+    .update(bookingsTable)
+    .set({
+      booking_status: "completed",
+      escrow_released_at: new Date(),
+      payout_error: null,
+      payout_transfer_reference: args.reference ?? null,
+      updated_at: new Date(),
+    })
+    .where(
+      and(
+        eq(bookingsTable.id, args.bookingId),
+        eq(bookingsTable.booking_status, "release_pending"),
+      ),
+    )
+    .returning();
+
+  if (result.length === 0) return false;
+
+  const [booking] = result;
+  await db.insert(auditLogTable).values({
+    actor_id: args.officerId,
+    action_type: "escrow_disbursed_offline",
+    resource_type: "booking",
+    resource_id: booking.id,
+    details: { reference: args.reference ?? null, mode: "managed" },
+  });
+
+  // Same dedupe keys as the transfer path — safe if both ever run.
+  await recordTrustEvent({
+    userId: booking.student_id,
+    ruleKey: "transaction_completed",
+    sourceType: "booking",
+    sourceId: booking.id,
+    dedupeKey: `transaction-completed:${booking.id}:student`,
+    reason: "Booking completed (offline disbursement)",
+  });
+  await recordTrustEvent({
+    userId: booking.landlord_id,
+    ruleKey: "transaction_completed",
+    sourceType: "booking",
+    sourceId: booking.id,
+    dedupeKey: `transaction-completed:${booking.id}:landlord`,
+    reason: "Booking completed (offline disbursement)",
+  });
+
+  await createNotification({
+    userId: booking.landlord_id,
+    type: "escrow_release",
+    title: "Payout sent",
+    body: "Your escrow payout has been sent to your bank account.",
+    relatedId: booking.id,
+    relatedType: "booking",
+  });
+
+  return true;
+}
+
+/**
  * Mark a booking as paid — idempotent. Only flips the lifecycle when the
  * booking is currently `pending_payment` so a late or replayed webhook never
  * overwrites a `completed`/`disputed` booking, and never double-updates.

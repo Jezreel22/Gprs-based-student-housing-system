@@ -27,7 +27,7 @@ const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string; desc
   pending_payment: { label: "Awaiting Payment", color: "#717171", desc: "This booking is reserved. Complete your Paystack payment to move it into escrow." },
   pending_occupancy: { label: "Awaiting Occupancy Verification", color: "#FF5A5F", desc: "Enter the 6-character code your landlord gave you to confirm you've moved in." },
   pending_review: { label: "Ready to Release", color: "#F57F17", desc: "Move-in confirmed. When you're satisfied, approve the payment to release it to the landlord." },
-  release_pending: { label: "Payout In Progress", color: "#1565C0", desc: "Your escrow funds are being transferred to the landlord." },
+  release_pending: { label: "Payout In Progress", color: "#1565C0", desc: "You approved the release. The payout to your landlord's bank account is being processed." },
   release_failed: { label: "Payout Needs Attention", color: "#E1444A", desc: "The payout to the landlord didn't go through. An officer will retry." },
   completed: { label: "Completed", color: "#34A853", desc: "This booking is complete. Escrow has been released." },
   cancelled: { label: "Cancelled", color: "#717171", desc: "This booking was cancelled." },
