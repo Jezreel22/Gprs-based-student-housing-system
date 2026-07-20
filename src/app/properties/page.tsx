@@ -21,6 +21,7 @@ function PropertiesPage() {
   const [rentMax, setRentMax] = useState(params.get("rent_max") ? parseInt(params.get("rent_max")!) : 200000);
   const [rooms, setRooms] = useState(params.get("rooms") ?? "");
   const [sort, setSort] = useState(params.get("sort") ?? "newest");
+  const [trustMin, setTrustMin] = useState(params.get("trust_score_min") ? parseInt(params.get("trust_score_min")!) : 0);
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -34,6 +35,7 @@ function PropertiesPage() {
   if (rentMin > 0) queryParams.rent_min = rentMin;
   if (rentMax < 200000) queryParams.rent_max = rentMax;
   if (rooms && rooms !== "any") queryParams.rooms = parseInt(rooms);
+  if (trustMin > 0) queryParams.trust_score_min = trustMin;
 
   const { data, isLoading, error } = useQuery(getGetPropertiesQueryOptions(queryParams));
 
@@ -41,12 +43,13 @@ function PropertiesPage() {
   const total = data?.total ?? 0;
   const pageCount = Math.ceil(total / 12);
 
-  const hasFilters = rentMin > 0 || rentMax < 200000 || (rooms && rooms !== "any");
+  const hasFilters = rentMin > 0 || rentMax < 200000 || (rooms && rooms !== "any") || trustMin > 0;
 
   const clearFilters = () => {
     setRentMin(0);
     setRentMax(200000);
     setRooms("");
+    setTrustMin(0);
     setPage(1);
   };
 
@@ -129,6 +132,27 @@ function PropertiesPage() {
                       {r}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Min Trust Score */}
+              <div>
+                <label className="text-sm font-semibold mb-3 block">
+                  Min. Landlord Trust Score: {trustMin > 0 ? trustMin : "Any"}
+                </label>
+                <Slider
+                  min={0}
+                  max={100}
+                  step={10}
+                  value={[trustMin]}
+                  onValueChange={([v]) => { setTrustMin(v); setPage(1); }}
+                  className="mt-2"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                  <span>Any</span>
+                  <span>50 (Average)</span>
+                  <span>70 (Trusted)</span>
+                  <span>90+</span>
                 </div>
               </div>
 

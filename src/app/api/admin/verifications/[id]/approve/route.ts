@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { usersTable, auditLogTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, jsonResponse, errorResponse } from "@/lib/api";
+import { recordTrustEvent } from "@/lib/trust/service";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -26,6 +27,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       resource_type: "user",
       resource_id: id,
     });
+
+    // Award government_id_verified trust points to landlords and agents who go
+    // through KYC. Students are not KYC-verified, so we skip them here.
+    if (["landlord", "agent"].includes(u.role)) {
+      await recordTrustEvent({
+        userId: id,
+        ruleKey: "government_id_verified",
+        sourceType: "user",
+        sourceId: id,
+        dedupeKey: `government-id:${id}`,
+        actorId: officer.id,
+        reason: "Government ID verified by officer",
+      });
+    }
 
     return jsonResponse({ message: "User verified" });
   } catch (err) {

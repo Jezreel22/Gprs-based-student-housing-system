@@ -35,35 +35,56 @@ export async function deactivateTrustEvent(dedupeKey: string): Promise<void> {
 export async function recomputeTrustScore(userId: string) {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (!user) throw new TrustError("not_found", "User not found");
-  const [events, receivedRatings, completedBookings, reports] = await Promise.all([
+
+  const [allEvents, receivedRatings, completedBookings, reports] = await Promise.all([
     db.select().from(trustEventsTable).where(and(eq(trustEventsTable.user_id, userId), eq(trustEventsTable.active, true))),
     db.select().from(ratingsTable).where(eq(ratingsTable.ratee_id, userId)),
-    db.select().from(bookingsTable).where(and(eq(bookingsTable.booking_status, "completed"), inArray(bookingsTable.student_id, [userId]))),
+    db.select({ id: bookingsTable.id }).from(bookingsTable).where(and(eq(bookingsTable.booking_status, "completed"), inArray(bookingsTable.student_id, [userId]))).then(async (s) => {
+      const l = await db.select({ id: bookingsTable.id }).from(bookingsTable).where(and(eq(bookingsTable.booking_status, "completed"), inArray(bookingsTable.landlord_id, [userId])));
+      return [...s, ...l];
+    }),
     db.select().from(trustReportsTable).where(and(eq(trustReportsTable.target_user_id, userId), eq(trustReportsTable.status, "substantiated"))),
   ]);
+
+  // Filter out events that have passed their expiry date. They remain in the
+  // ledger (active=true) so the history UI can show them with an `expired` flag,
+  // but they must not contribute to the live score.
+  const now = new Date();
+  const events = allEvents.filter(
+    (e) => e.expires_at == null || e.expires_at > now,
+  );
+
   const byBucket = { identity: 0, property: 0, transaction: 0, ratings: 0, fraud: 0, tenure: 0 };
-  let eventTotal = 0;
   for (const event of events) {
     const rule = TRUST_RULES[event.rule_key as keyof typeof TRUST_RULES];
     if (rule) byBucket[rule.bucket] += event.points_delta;
-    eventTotal += event.points_delta;
   }
-  const now = Date.now();
-  if (user.created_at && now - user.created_at.getTime() >= SIX_MONTHS_MS) byBucket.tenure += TRUST_RULES.account_age_six_months.points;
+
+  const nowMs = now.getTime();
+  if (user.created_at && nowMs - user.created_at.getTime() >= SIX_MONTHS_MS) {
+    byBucket.tenure += TRUST_RULES.account_age_six_months.points;
+  }
   const latestReport = reports.sort((a, b) => (b.resolved_at?.getTime() ?? 0) - (a.resolved_at?.getTime() ?? 0))[0];
-  if (!latestReport || now - (latestReport.resolved_at?.getTime() ?? latestReport.created_at.getTime()) >= NINETY_DAYS_MS) byBucket.tenure += TRUST_RULES.no_reports_ninety_days.points;
+  if (!latestReport || nowMs - (latestReport.resolved_at?.getTime() ?? latestReport.created_at.getTime()) >= NINETY_DAYS_MS) {
+    byBucket.tenure += TRUST_RULES.no_reports_ninety_days.points;
+  }
   const policyCount = reports.filter((r) => r.report_type === "policy_violation").length;
   if (policyCount >= POLICY_VIOLATION_THRESHOLD) byBucket.fraud += TRUST_RULES.multiple_policy_violations.points;
-  const total = clampTrustScore(TRUST_BASELINE + eventTotal + byBucket.tenure + (policyCount >= POLICY_VIOLATION_THRESHOLD ? TRUST_RULES.multiple_policy_violations.points : 0));
+
+  // Total = baseline + all bucket contributions. Derived tenure/fraud adjustments
+  // are already accumulated inside byBucket, so we sum all buckets once.
+  const bucketSum = Object.values(byBucket).reduce((a, b) => a + b, 0);
+  const total = clampTrustScore(TRUST_BASELINE + bucketSum);
   const level = trustLevelForScore(total);
   const avg = receivedRatings.length ? receivedRatings.reduce((sum, r) => sum + r.stars, 0) / receivedRatings.length : 0;
+
   const projection = {
     user_id: userId, total_score: total, trust_level: level,
     identity_verification_points: byBucket.identity, property_verification_points: byBucket.property,
     transaction_completion_points: byBucket.transaction, ratings_average_points: byBucket.ratings,
     fraud_report_deduction: byBucket.fraud, tenure_bonus_points: byBucket.tenure,
     total_transactions: completedBookings.length, completed_transactions: completedBookings.length,
-    average_rating: avg, fraud_reports_count: reports.length, last_recomputed_at: new Date(),
+    average_rating: avg, fraud_reports_count: reports.length, last_recomputed_at: now,
   };
   const [saved] = await db.insert(trustScoresTable).values(projection).onConflictDoUpdate({ target: trustScoresTable.user_id, set: projection }).returning();
   return saved;
@@ -76,7 +97,18 @@ export async function getTrustScore(userId: string) {
 
 export async function getTrustHistory(userId: string, page = 1, pageSize = 30) {
   const score = await getTrustScore(userId);
-  const events = await db.select().from(trustEventsTable).where(eq(trustEventsTable.user_id, userId)).orderBy(desc(trustEventsTable.created_at)).limit(pageSize).offset((page - 1) * pageSize);
+  const rawEvents = await db
+    .select()
+    .from(trustEventsTable)
+    .where(eq(trustEventsTable.user_id, userId))
+    .orderBy(desc(trustEventsTable.created_at))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+  const now = new Date();
+  const events = rawEvents.map((e) => ({
+    ...e,
+    expired: e.active && e.expires_at != null && e.expires_at <= now,
+  }));
   return { score, events, page, page_size: pageSize };
 }
 

@@ -13,6 +13,7 @@ import {
   useAdjudicateDispute,
 } from "@/api";
 import NavBar from "@/components/NavBar";
+import TrustBadge from "@/components/TrustBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock } from "lucide-react";
+import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock, FileWarning } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/api/custom-fetch";
 
@@ -43,6 +44,10 @@ export default function Admin() {
   const [adjNotes, setAdjNotes] = useState("");
   const [adjRefundPct, setAdjRefundPct] = useState("");
   const [escrowBusy, setEscrowBusy] = useState<string | null>(null);
+  // Report adjudication
+  const [adjReport, setAdjReport] = useState<{ id: string; type: string; target: string } | null>(null);
+  const [reportStatus, setReportStatus] = useState("substantiated");
+  const [reportNotes, setReportNotes] = useState("");
   // Role gate (escrow-officer only). Render a gate until confirmed so the
   // admin shell — and its admin-only queries — never run for students/landlords.
   const [checked, setChecked] = useState(false);
@@ -74,6 +79,13 @@ export default function Admin() {
     queryFn: () => customFetch<{ items: any[] }>("/api/admin/bookings"),
   });
   const escrowBookings = (escrowData as any)?.items ?? [];
+  // Trust reports queue
+  const { data: reportsData, refetch: refetchReports } = useQuery<any[]>({
+    queryKey: ["admin", "reports"],
+    enabled: allowed,
+    queryFn: () => customFetch<any[]>("/api/admin/reports?open_only=true"),
+  });
+  const openReports: any[] = Array.isArray(reportsData) ? reportsData : [];
 
   async function releaseEscrowNow(id: string) {
     setEscrowBusy(id);
@@ -107,6 +119,21 @@ export default function Admin() {
   // Managed-escrow disbursement: the officer confirms the manual bank transfer
   // to the landlord was actually sent. Only meaningful for `release_pending`
   // rows (tenant already approved).
+  async function adjudicateReport() {
+    if (!adjReport || !reportNotes) return;
+    try {
+      await customFetch(`/api/admin/reports/${adjReport.id}/adjudicate`, {
+        method: "POST",
+        body: JSON.stringify({ status: reportStatus, officer_notes: reportNotes }),
+      });
+      toast({ title: `Report ${reportStatus}` });
+      setAdjReport(null); setReportNotes(""); setReportStatus("substantiated");
+      refetchReports();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Failed", description: e?.message ?? "Try again" });
+    }
+  }
+
   async function markDisbursed(id: string) {
     setEscrowBusy(id);
     try {
@@ -223,8 +250,7 @@ export default function Admin() {
           <p className="text-sm text-muted-foreground mt-1">Review verifications, approve listings, and adjudicate disputes.</p>
         </div>
 
-        {/* Stats cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center">
             <div className="text-3xl font-bold text-primary">{(pendingUsers as any[]).length}</div>
             <div className="text-sm text-muted-foreground mt-1">Pending Verifications</div>
@@ -233,14 +259,18 @@ export default function Admin() {
             <div className="text-3xl font-bold text-amber-500">{pendingProps.length}</div>
             <div className="text-sm text-muted-foreground mt-1">Listings for Review</div>
           </div>
-          <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center col-span-2 md:col-span-1">
+          <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center">
             <div className="text-3xl font-bold text-red-500">{openDisputes.length}</div>
             <div className="text-sm text-muted-foreground mt-1">Open Disputes</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center">
+            <div className="text-3xl font-bold text-orange-500">{openReports.length}</div>
+            <div className="text-sm text-muted-foreground mt-1">Trust Reports</div>
           </div>
         </div>
 
         <Tabs defaultValue="verifications" className="space-y-6">
-          <TabsList className="bg-white border border-[#EBEBEB] h-auto p-1 rounded-xl">
+          <TabsList className="bg-white border border-[#EBEBEB] h-auto p-1 rounded-xl flex-wrap">
             <TabsTrigger value="verifications" className="rounded-lg px-4">
               Verifications {(pendingUsers as any[]).length > 0 && <Badge className="ml-2 bg-primary text-white text-xs">{(pendingUsers as any[]).length}</Badge>}
             </TabsTrigger>
@@ -249,6 +279,9 @@ export default function Admin() {
             </TabsTrigger>
             <TabsTrigger value="disputes" className="rounded-lg px-4">
               Disputes {openDisputes.length > 0 && <Badge className="ml-2 bg-red-500 text-white text-xs">{openDisputes.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="reports" className="rounded-lg px-4">
+              Reports {openReports.length > 0 && <Badge className="ml-2 bg-orange-500 text-white text-xs">{openReports.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="escrow" className="rounded-lg px-4">
               Escrow {escrowBookings.length > 0 && <Badge className="ml-2 bg-blue-500 text-white text-xs">{escrowBookings.length}</Badge>}
@@ -276,6 +309,11 @@ export default function Admin() {
                           <div>
                             <p className="font-semibold text-sm">{u.first_name} {u.last_name}</p>
                             <p className="text-xs text-muted-foreground capitalize">{u.role?.replace("_", " ")} · {u.email}</p>
+                            {u.trust_score && (
+                              <div className="mt-0.5">
+                                <TrustBadge score={u.trust_score?.total_score ?? 50} size="sm" />
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -440,7 +478,68 @@ export default function Admin() {
             )}
           </TabsContent>
 
-          {/* ESCROW TAB */}
+          {/* REPORTS TAB */}
+          <TabsContent value="reports">
+            {openReports.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
+                <FileWarning className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                <h3 className="font-semibold">No open reports</h3>
+                <p className="text-muted-foreground text-sm">All trust reports have been reviewed.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {openReports.map((r: any) => (
+                  <div key={r.id} className="bg-white rounded-xl border border-[#EBEBEB] p-5">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span
+                            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                            style={{ background: "#FFF3E0", color: "#C2410C" }}
+                          >
+                            <FileWarning className="h-3 w-3" />
+                            {r.report_type?.replace(/_/g, " ")}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Filed {r.created_at ? new Date(r.created_at).toLocaleDateString() : ""}
+                          </span>
+                        </div>
+                        <p className="text-sm font-medium mb-1 line-clamp-2">{r.description}</p>
+                        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mt-1">
+                          <span>
+                            Reporter: <span className="text-foreground font-medium">
+                              {r.reporter?.first_name} {r.reporter?.last_name} ({r.reporter?.role})
+                            </span>
+                          </span>
+                          {r.target_user && (
+                            <span className="flex items-center gap-1.5">
+                              Target: <span className="text-foreground font-medium">
+                                {r.target_user.first_name} {r.target_user.last_name}
+                              </span>
+                              {r.target_user && <TrustBadge score={r.target_user?.trust_score?.total_score ?? 50} size="sm" showLabel={false} />}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+                        className="gap-1 text-xs shrink-0"
+                        onClick={() => setAdjReport({
+                          id: r.id,
+                          type: r.report_type?.replace(/_/g, " "),
+                          target: `${r.target_user?.first_name ?? "Unknown"} ${r.target_user?.last_name ?? ""}`,
+                        })}
+                      >
+                        <Gavel className="h-3.5 w-3.5" /> Review
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
           <TabsContent value="escrow">
             {escrowBookings.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
@@ -648,6 +747,51 @@ export default function Admin() {
             >
               <Gavel className="h-4 w-4 mr-2" />
               {adjudicateMutation.isPending ? "Processing..." : "Issue Ruling"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report Adjudication Dialog */}
+      <Dialog open={!!adjReport} onOpenChange={() => setAdjReport(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Review Trust Report</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="text-sm text-muted-foreground bg-[#FAFAFA] rounded-xl p-3 border border-[#EBEBEB]">
+              <span className="font-semibold text-foreground capitalize">{adjReport?.type}</span>
+              {" "}report against <span className="font-semibold text-foreground">{adjReport?.target}</span>
+            </div>
+            <div>
+              <Label className="text-sm font-medium mb-1.5 block">Decision</Label>
+              <Select value={reportStatus} onValueChange={setReportStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="substantiated">Substantiated — Apply trust penalty</SelectItem>
+                  <SelectItem value="dismissed">Dismissed — No action taken</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm font-medium mb-1.5 block">Officer Notes *</Label>
+              <Textarea
+                value={reportNotes}
+                onChange={e => setReportNotes(e.target.value)}
+                placeholder="Document your review findings and rationale..."
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setAdjReport(null)}>Cancel</Button>
+            <Button
+              style={{ background: reportStatus === "substantiated" ? "#E1444A" : "#34A853", color: "#fff", border: "none" }}
+              onClick={adjudicateReport}
+              disabled={!reportNotes}
+            >
+              <Gavel className="h-4 w-4 mr-2" />
+              {reportStatus === "substantiated" ? "Substantiate" : "Dismiss"} Report
             </Button>
           </DialogFooter>
         </DialogContent>

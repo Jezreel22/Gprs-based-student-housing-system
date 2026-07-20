@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, User, LogOut, LayoutDashboard, Home, PlusCircle, MessageSquare, Shield, ShoppingBag } from "lucide-react";
+import { Menu, User, LogOut, LayoutDashboard, Home, PlusCircle, MessageSquare, Shield, ShoppingBag, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // Human-readable role labels + colors for the avatar chip.
@@ -96,6 +96,15 @@ export default function NavBar() {
                 : "text-foreground hover:bg-[#F7F7F7]"
             }`}>
             Browse
+          </Link>
+          <Link href="/map"
+            className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              pathname === "/map"
+                ? "text-primary bg-primary/10"
+                : "text-foreground hover:bg-[#F7F7F7]"
+            }`}>
+            <MapPin className="h-3.5 w-3.5 inline mr-1 -mt-0.5" />
+            Map
           </Link>
           {user && ["landlord", "agent"].includes(user.role) && (
             <Link href="/properties/new"
@@ -184,6 +193,9 @@ export default function NavBar() {
                     <PlusCircle className="h-4 w-4 mr-2" /> List a Property
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem onClick={() => router.push("/map")}>
+                  <MapPin className="h-4 w-4 mr-2" /> Map Search
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => router.push("/properties")}>
                   <Home className="h-4 w-4 mr-2" /> Browse Listings
                 </DropdownMenuItem>

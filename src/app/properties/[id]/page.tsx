@@ -315,6 +315,25 @@ export default function PropertyDetail() {
                   </a>
                 </div>
               )}
+
+              {/* Find nearby properties on the interactive map */}
+              <div className="mt-4 flex gap-3 flex-wrap">
+                <Link
+                  href={`/map${property.latitude && property.longitude ? `?lat=${property.latitude}&lng=${property.longitude}` : ""}`}
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
+                >
+                  <MapPin className="h-4 w-4" />
+                  Find nearby properties on map
+                </Link>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${property.latitude},${property.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Open in Google Maps
+                </a>
+              </div>
             </div>
 
             {/* Reviews */}
@@ -453,20 +472,53 @@ export default function PropertyDetail() {
                         </span>
                         <TrustBadge score={landlordTrust?.total_score ?? trustScore} size="sm" />
                       </div>
-                      {landlordTrust && (
-                        <div className="space-y-1.5 mt-2">
-                          {[
-                            { label: "Identity verified", val: landlordTrust.identity_verification_points },
-                            { label: "Transactions completed", val: landlordTrust.transaction_completion_points },
-                            { label: "Ratings average", val: landlordTrust.ratings_average_points },
-                          ].map(item => (
-                            <div key={item.label} className="flex items-center justify-between">
-                              <span className="text-xs text-muted-foreground">{item.label}</span>
-                              <span className="text-xs font-semibold text-foreground">+{item.val ?? 0}</span>
-                            </div>
-                          ))}
+                      {landlordTrust && (() => {
+                        // Full six-bucket breakdown — only non-zero rows, with
+                        // signed values so deductions read as penalties.
+                        const rows = [
+                          { label: "Identity & profile", val: landlordTrust.identity_verification_points },
+                          { label: "Transactions completed", val: landlordTrust.transaction_completion_points },
+                          { label: "Ratings", val: landlordTrust.ratings_average_points },
+                          { label: "Property verification", val: landlordTrust.property_verification_points },
+                          { label: "Tenure bonus", val: landlordTrust.tenure_bonus_points },
+                          { label: "Deductions", val: landlordTrust.fraud_report_deduction },
+                        ].filter((r) => (r.val ?? 0) !== 0);
+                        if (rows.length === 0) {
+                          return (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              No scoring activity yet.
+                            </p>
+                          );
+                        }
+                        return (
+                          <div className="space-y-1.5 mt-2">
+                            {rows.map((item) => {
+                              const v = item.val ?? 0;
+                              const positive = v > 0;
+                              return (
+                                <div key={item.label} className="flex items-center justify-between">
+                                  <span className="text-xs text-muted-foreground">{item.label}</span>
+                                  <span className={`text-xs font-semibold ${positive ? "text-green-600" : "text-red-600"}`}>
+                                    {positive ? "+" : ""}{v}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                      {landlordTrust && (landlordTrust.completed_transactions || landlordTrust.average_rating) ? (
+                        <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[#EBEBEB] text-xs text-muted-foreground">
+                          {landlordTrust.completed_transactions ? (
+                            <span>{landlordTrust.completed_transactions} completed {landlordTrust.completed_transactions === 1 ? "booking" : "bookings"}</span>
+                          ) : null}
+                          {landlordTrust.average_rating ? (
+                            <span className="flex items-center gap-0.5">
+                              <Star className="h-3 w-3" /> {landlordTrust.average_rating.toFixed(1)}
+                            </span>
+                          ) : null}
                         </div>
-                      )}
+                      ) : null}
                     </div>
 
                     {landlord.phone_number && (

@@ -252,6 +252,13 @@ export const trustScoresTable = pgTable("trust_scores", {
 // ─── trust events ──────────────────────────────────────────────────────────
 // Immutable scoring ledger. `trust_scores` is a fast projection of these rows;
 // the ledger remains the source of truth and makes replay/backfill safe.
+//
+// `expires_at` lets negative fraud/dispute/property events age out so users
+// aren't permanently punished by a single isolated mistake. NULL = event
+// never expires (positive events and rules we choose to keep indefinitely).
+// The recompute folds `active=true AND (expires_at IS NULL OR expires_at>now())`
+// into the projection; the history endpoint still surfaces expired rows with
+// `expired: true` so the audit trail stays complete.
 export const trustEventsTable = pgTable("trust_events", {
   id: uuid("id").primaryKey().defaultRandom(),
   user_id: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
@@ -264,11 +271,13 @@ export const trustEventsTable = pgTable("trust_events", {
   reason: text("reason").notNull(),
   details: jsonb("details").$type<Record<string, unknown>>(),
   active: boolean("active").default(true).notNull(),
+  expires_at: timestamp("expires_at"),
   created_at: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("trust_events_user_created_idx").on(table.user_id, table.created_at),
   index("trust_events_rule_created_idx").on(table.rule_key, table.created_at),
   index("trust_events_source_idx").on(table.source_type, table.source_id),
+  index("trust_events_expires_idx").on(table.expires_at),
 ]);
 
 // ─── trust reports ─────────────────────────────────────────────────────────

@@ -12,14 +12,14 @@ const nextConfig: NextConfig = {
       "default-src 'self'",
       // js.paystack.co = inline checkout script (PaystackPop)
       // accounts.google.com/gsi/client = Google Identity Services (login button)
-      "script-src 'self' 'unsafe-inline' https://js.paystack.co https://*.paystack.com https://accounts.google.com https://*.googleapis.com",
+      "script-src 'self' 'unsafe-inline' https://js.paystack.co https://*.paystack.com https://accounts.google.com https://*.googleapis.com https://maps.googleapis.com https://maps.gstatic.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://*.paystack.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       // picsum.photos redirects to fastly.picsum.photos — both must be allowed.
-      "img-src 'self' data: blob: https://picsum.photos https://fastly.picsum.photos https://lh3.googleusercontent.com https://*.paystack.co https://*.paystack.com https://*.googleusercontent.com",
-      "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://*.googleapis.com https://api.paystack.co https://*.paystack.co https://*.paystack.com https://paystack.com https://picsum.photos https://fastly.picsum.photos",
+      "img-src 'self' data: blob: https://picsum.photos https://fastly.picsum.photos https://lh3.googleusercontent.com https://*.paystack.co https://*.paystack.com https://*.googleusercontent.com https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com",
+      "connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://*.googleapis.com https://maps.googleapis.com https://api.paystack.co https://*.paystack.co https://*.paystack.com https://paystack.com https://picsum.photos https://fastly.picsum.photos",
       // checkout.paystack.COM hosts the popup iframe; also cover paystack.com apex.
-      "frame-src https://accounts.google.com https://www.openstreetmap.org https://*.paystack.co https://*.paystack.com https://paystack.co https://paystack.com",
+      "frame-src https://accounts.google.com https://www.openstreetmap.org https://*.paystack.co https://*.paystack.com https://paystack.co https://paystack.com https://maps.google.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

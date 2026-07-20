@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Star } from "lucide-react";
 import type { PropertySummary } from "@/api";
+import { trustLevelForScore, trustLevelLabel } from "@/lib/trust/levels";
+import { TRUST_LEVEL_STYLES } from "./trust-level-styles";
 
 interface PropertyCardProps {
   property: PropertySummary;
@@ -24,6 +26,11 @@ function getPhotoUrl(property: PropertySummary) {
 export default function PropertyCard({ property }: PropertyCardProps) {
   const landlord = property.landlord;
   const trustScore = property.trust_score ?? 0;
+  const trustLevel = trustLevelForScore(trustScore);
+  // Only the two "trust-positive" levels earn a visible badge — a "Low Trust"
+  // or "High Risk" chip on a listing photo would scare users off listings the
+  // algorithm hasn't finished reviewing. Average is the implicit baseline.
+  const trustHighlight = trustLevel === "highly_trusted" || trustLevel === "trusted";
   const verified = landlord?.verification_status === "verified";
   const rating = landlord?.average_rating ?? null;
 
@@ -43,11 +50,18 @@ export default function PropertyCard({ property }: PropertyCardProps) {
           />
 
           {/* Trust badge — bottom-left, like Airbnb's "Guest favourite" overlay */}
-          {trustScore >= 70 && (
-            <div className="absolute top-3 left-3 bg-white rounded-full px-2.5 py-1 text-[11px] font-semibold text-foreground shadow-sm">
-              Highly rated
-            </div>
-          )}
+          {trustHighlight && (() => {
+            const style = TRUST_LEVEL_STYLES[trustLevel];
+            return (
+              <div
+                className="absolute top-3 left-3 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm inline-flex items-center gap-1"
+                style={{ background: style.bg, color: style.color }}
+              >
+                <style.Icon size={11} />
+                {trustLevelLabel(trustLevel)} landlord
+              </div>
+            );
+          })()}
 
           {/* Verified tick — top-right */}
           {verified && (
@@ -79,18 +93,12 @@ export default function PropertyCard({ property }: PropertyCardProps) {
               <span className="font-semibold">{formatNGN(property.rent_amount_ngn)}</span>
               <span className="text-muted-foreground font-normal"> /yr</span>
             </p>
-            {rating !== null && rating > 0 && (
+            {rating !== null && rating > 0 ? (
               <span className="flex items-center gap-0.5 text-sm text-foreground">
                 <Star className="h-3 w-3 fill-current" />
                 <span className="font-medium">{rating.toFixed(1)}</span>
               </span>
-            )}
-            {trustScore >= 60 && (rating === null || rating === 0) && (
-              <span className="flex items-center gap-0.5 text-sm text-foreground">
-                <Star className="h-3 w-3 fill-current" />
-                <span className="font-medium">{Math.max(4, Math.min(5, (trustScore / 20))).toFixed(1)}</span>
-              </span>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

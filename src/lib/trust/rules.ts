@@ -55,6 +55,44 @@ export const POLICY_VIOLATION_THRESHOLD = 2;
 export const SIX_MONTHS_MS = 183 * 24 * 60 * 60 * 1000;
 export const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
+/**
+ * Default decay window per negative event rule. NULL means the event never
+ * expires (positive rules, and a few negatives that should stick). Callers
+ * resolve expiry via `defaultExpiryForRule(ruleKey, pointsDelta)`. Keep these
+ * values in sync with the SQL backfill in
+ * drizzle/0001_trust_event_expiry.sql.
+ */
+const DEFAULT_EXPIRY_MS: Partial<Record<TrustRuleKey, number>> = {
+  failed_identity_verification: 365 * 24 * 60 * 60 * 1000, // 12 months
+  transaction_dispute: 547 * 24 * 60 * 60 * 1000,         // 18 months
+  fake_property_listing: 730 * 24 * 60 * 60 * 1000,       // 24 months
+  spam_activity: 730 * 24 * 60 * 60 * 1000,               // 24 months
+};
+
+/**
+ * Returns the default expiry timestamp for a freshly recorded event. Positive
+ * rules never expire; rules not in DEFAULT_EXPIRY_MS (e.g. cancellations,
+ * negative reviews) keep their weight indefinitely.
+ */
+export function defaultExpiryForRule(ruleKey: TrustRuleKey, pointsDelta: number, now: Date = new Date()): Date | null {
+  if (pointsDelta >= 0) return null;
+  const ms = DEFAULT_EXPIRY_MS[ruleKey];
+  if (ms == null) return null;
+  return new Date(now.getTime() + ms);
+}
+
+/**
+ * True if an event is past its expiry at `now`. Events with `expires_at == null`
+ * never expire. Inactive events are not "expired" — they're explicitly
+ * deactivated, a different state — so this returns false for them and lets the
+ * recompute's `active=true` filter handle them.
+ */
+export function isEventExpired(event: { active: boolean; expires_at: Date | null }, now: Date = new Date()): boolean {
+  if (!event.active) return false;
+  if (event.expires_at == null) return false;
+  return event.expires_at.getTime() <= now.getTime();
+}
+
 export function isTrustRuleKey(key: string): key is TrustRuleKey {
   return key in TRUST_RULES && !TRUST_RULES[key as AnyTrustRuleKey].derived;
 }

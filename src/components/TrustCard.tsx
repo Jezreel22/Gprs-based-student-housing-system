@@ -6,21 +6,13 @@ import { Star, ShieldCheck, TrendingUp, ArrowRight } from "lucide-react";
 import { getGetUserTrustScoreQueryOptions } from "@/api";
 import type { TrustScore } from "@/api";
 import TrustBadge from "./TrustBadge";
+import { TRUST_LEVEL_STYLES } from "./trust-level-styles";
 
 interface TrustCardProps {
   userId: string;
   role?: string;
   verificationStatus?: string;
   compact?: boolean;
-}
-
-// Same 5-stop ramp TrustBadge uses, kept here for the progress bar fill.
-function scoreColor(score: number): string {
-  if (score >= 90) return "#2E7D32";
-  if (score >= 70) return "#1565C0";
-  if (score >= 50) return "#9A6700";
-  if (score >= 30) return "#C2410C";
-  return "#C62828";
 }
 
 function BreakdownRow({ label, value }: { label: string; value: number }) {
@@ -54,7 +46,7 @@ export default function TrustCard({ userId, role, verificationStatus, compact }:
 
   const score = trust?.total_score ?? 50;
   const level = trust?.trust_level ?? "average";
-  const color = scoreColor(score);
+  const color = TRUST_LEVEL_STYLES[level].color;
   const isVerified = verificationStatus === "verified";
 
   // Breakdown rows — only non-zero buckets render, so an honest picture.
