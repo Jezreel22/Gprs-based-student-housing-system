@@ -35,7 +35,7 @@ import type {
   MapCentre,
   MapFilters,
 } from "@/lib/maps/types";
-import type { MapViewHandle } from "@/components/maps/MapView";
+import MapView, { MapViewHandle } from "@/components/maps/MapView";
 import { Button } from "@/components/ui/button";
 import {
   Navigation,
@@ -49,17 +49,18 @@ import {
 
 // Lazy-load MapView so the heavy Google Maps component doesn't block initial
 // page render — it's only needed once the user navigates to /map.
-const MapView = dynamic(() => import("@/components/maps/MapView"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-[#F7F7F7] rounded-2xl">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Preparing map…
-      </div>
-    </div>
-  ),
-});
+
+// const MapView = dynamic(() => import("@/components/maps/MapView"), {
+//   ssr: false,
+//   loading: () => (
+//     <div className="w-full h-full flex items-center justify-center bg-[#F7F7F7] rounded-2xl">
+//       <div className="flex items-center gap-2 text-sm text-muted-foreground">
+//         <Loader2 className="h-4 w-4 animate-spin" />
+//         Preparing map…
+//       </div>
+//     </div>
+//   ),
+// });
 
 const DEFAULT_FILTERS: MapFilters = {
   radius_km: 5,

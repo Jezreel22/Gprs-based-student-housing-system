@@ -602,7 +602,7 @@ function BookingPage() {
               className="w-full gap-2"
               style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
               disabled={paymentInProgress}
-              onClick={() => runPaystackCheckout(b.id)}
+              onClick={() => runPaystackCheckout(b.id, () => router.push(`/bookings/${b.id}`))}
             >
               <CreditCard className="h-4 w-4" />
               {paymentInProgress ? "Opening Paystack…" : `Pay ${formatNGN(b.total_amount_ngn)} now`}
