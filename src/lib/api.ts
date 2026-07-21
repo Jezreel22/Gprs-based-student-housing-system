@@ -48,7 +48,32 @@ export function handleError(err: unknown, req?: Request): NextResponse {
     return errorResponse(err.message, err.status);
   }
   const logger = req ? logFromRequest(req) : log;
-  logger.error("api unexpected error", { err });
+  // Surface the underlying cause chain (e.g. a postgres-js AggregateError from
+  // an unreachable pooler) in the server log. A bare `Error: Failed query: …`
+  // hides the real reason (ETIMEDOUT / ENETUNREACH / ECONNRESET) and turns a
+  // network outage into an opaque "listings disappeared" symptom. We only log
+  // it — the client still gets a generic 500 with no detail leak.
+  const causeChain: unknown[] = [];
+  let cur: unknown = err instanceof Error ? (err as Error & { cause?: unknown }).cause : undefined;
+  let depth = 0;
+  while (cur && depth < 6) {
+    if (cur instanceof Error) {
+      causeChain.push({
+        name: cur.name,
+        message: cur.message,
+        code: (cur as Error & { code?: string }).code,
+        inner: (cur as Error & { errors?: unknown[] }).errors?.map((x) =>
+          x instanceof Error ? `${x.name}: ${x.message}` : String(x),
+        ),
+      });
+      cur = (cur as Error & { cause?: unknown }).cause;
+    } else {
+      causeChain.push(String(cur));
+      break;
+    }
+    depth++;
+  }
+  logger.error("api unexpected error", { err, cause: causeChain.length ? causeChain : undefined });
   return errorResponse("Internal server error", 500);
 }
 
