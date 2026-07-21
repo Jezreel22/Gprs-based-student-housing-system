@@ -8,11 +8,67 @@ export class TrustError extends Error {
   constructor(public code: string, message: string) { super(message); this.name = "TrustError"; }
 }
 
+/**
+ * Only landlords and agents are scored. Students rent on the platform — they
+ * aren't rated — so the entire trust pipeline (event ledger + score projection)
+ * is a no-op for them. Every public service function short-circuits on this so
+ * no student ever has a score computed, stored, or returned, regardless of which
+ * flow triggers it (KYC, booking, rating, dispute, payment mark, verification).
+ */
+function isScorableRole(role: string | null | undefined): boolean {
+  return role === "landlord" || role === "agent";
+}
+
+async function loadUserOrThrow(userId: string) {
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!user) throw new TrustError("not_found", "User not found");
+  return user;
+}
+
+/** Non-throwing variant used by recordTrustEvent so the student-role guard is
+ *  evaluated before any NotFoundError propagates. */
+async function loadUser(userId: string) {
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  return user ?? null;
+}
+
+/**
+ * Neutral baseline returned in place of a real projection for non-scored roles.
+ * Shaped to match the stored row so `formatTrustScore` and downstream consumers
+ * work unchanged. It is never persisted — non-scored roles have no score row.
+ */
+function baselineScoreProjection(userId: string) {
+  return {
+    user_id: userId,
+    total_score: TRUST_BASELINE,
+    trust_level: "average" as TrustLevel,
+    identity_verification_points: 0,
+    property_verification_points: 0,
+    transaction_completion_points: 0,
+    ratings_average_points: 0,
+    fraud_report_deduction: 0,
+    tenure_bonus_points: 0,
+    total_transactions: 0,
+    completed_transactions: 0,
+    average_rating: 0,
+    fraud_reports_count: 0,
+    last_recomputed_at: null,
+  };
+}
+
 export async function recordTrustEvent(args: {
   userId: string; ruleKey: TrustRuleKey; sourceType: string; sourceId?: string | null;
   dedupeKey: string; actorId?: string | null; reason?: string; details?: Record<string, unknown>;
 }): Promise<{ inserted: boolean; score: number; level: TrustLevel }> {
   if (!isTrustRuleKey(args.ruleKey)) throw new TrustError("invalid_rule", "Unknown trust rule");
+  // Load the target user without throwing so we can distinguish
+  // "not found" (also baseline — safe default) from a scorable role.
+  const targetUser = await loadUser(args.userId);
+  if (!targetUser || !isScorableRole(targetUser.role)) {
+    // Students and any non-landlord/agent role aren't scored: return a neutral
+    // baseline so callers behave as if scoring ran.
+    return { inserted: false, score: TRUST_BASELINE, level: "average" as TrustLevel };
+  }
   const rule = TRUST_RULES[args.ruleKey];
   const rows = await db.insert(trustEventsTable).values({
     user_id: args.userId, rule_key: rule.key, points_delta: rule.points,
@@ -33,8 +89,8 @@ export async function deactivateTrustEvent(dedupeKey: string): Promise<void> {
 }
 
 export async function recomputeTrustScore(userId: string) {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  if (!user) throw new TrustError("not_found", "User not found");
+  const user = await loadUserOrThrow(userId);
+  if (!isScorableRole(user.role)) return baselineScoreProjection(userId);
 
   const [allEvents, receivedRatings, completedBookings, reports] = await Promise.all([
     db.select().from(trustEventsTable).where(and(eq(trustEventsTable.user_id, userId), eq(trustEventsTable.active, true))),
@@ -91,11 +147,17 @@ export async function recomputeTrustScore(userId: string) {
 }
 
 export async function getTrustScore(userId: string) {
+  const user = await loadUserOrThrow(userId);
+  if (!isScorableRole(user.role)) return baselineScoreProjection(userId);
   const [row] = await db.select().from(trustScoresTable).where(eq(trustScoresTable.user_id, userId)).limit(1);
   return row ?? recomputeTrustScore(userId);
 }
 
 export async function getTrustHistory(userId: string, page = 1, pageSize = 30) {
+  const user = await loadUserOrThrow(userId);
+  if (!isScorableRole(user.role)) {
+    return { score: baselineScoreProjection(userId), events: [], page, page_size: pageSize };
+  }
   const score = await getTrustScore(userId);
   const rawEvents = await db
     .select()
@@ -123,7 +185,7 @@ function isProfileComplete(user: { first_name?: string | null; last_name?: strin
  */
 export async function maybeAwardProfileCompletion(userId: string): Promise<void> {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
-  if (!user || !isProfileComplete(user)) return;
+  if (!user || !isScorableRole(user.role) || !isProfileComplete(user)) return;
   const [existing] = await db.select({ id: trustEventsTable.id })
     .from(trustEventsTable)
     .where(and(eq(trustEventsTable.user_id, userId), eq(trustEventsTable.rule_key, "profile_completed")))

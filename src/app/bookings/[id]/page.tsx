@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getGetPropertyQueryOptions, getGetBookingQueryOptions,
-  useCreateBooking, useConfirmOccupancy, useFileDispute, useCreateRating
+  useCreateBooking, useConfirmOccupancy, useFileDispute, useCreateRating,
+  useCreatePropertyRating,
 } from "@/api";
 import { initializePayment, verifyPayment } from "@/lib/payment-client";
 import { payWithPaystack, PAYSTACK_CLOSED } from "@/lib/paystack-inline";
@@ -102,6 +103,9 @@ function BookingPage() {
   const confirmOccupancyMutation = useConfirmOccupancy();
   const fileDisputeMutation = useFileDispute();
   const createRatingMutation = useCreateRating();
+  // Property rating is separate from the landlord rating; both are submitted
+  // together below. Idempotent server-side via (booking_id, rater_id) unique.
+  const createPropertyRatingMutation = useCreatePropertyRating();
   const queryClient = useQueryClient();
   const [paymentInProgress, setPaymentInProgress] = useState(false);
 
@@ -118,6 +122,7 @@ function BookingPage() {
   const [rating, setRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [showRating, setShowRating] = useState(false);
+  const [propertyRating, setPropertyRating] = useState(0);
   const [approvingRelease, setApprovingRelease] = useState(false);
 
   useEffect(() => {
@@ -239,10 +244,11 @@ function BookingPage() {
 
   const handleRating = () => {
     if (!booking || !rating) return;
+    const b = booking as any;
     createRatingMutation.mutate({
       data: {
-        booking_id: (booking as any).id,
-        ratee_id: (booking as any).landlord_id,
+        booking_id: b.id,
+        ratee_id: b.landlord_id,
         rating_type: "student_rates_landlord",
         stars: rating,
         review_text: reviewText || undefined,
@@ -250,10 +256,40 @@ function BookingPage() {
     }, {
       onSuccess: () => {
         toast({ title: "Review submitted! ⭐" });
-        setShowRating(false);
+        // Property rating mutation also calls resetRatingForm in onSettled;
+        // this one resets if the property side didn't fire.
+        if (!propertyRating || !b.property?.id) resetRatingForm();
       },
       onError: () => toast({ variant: "destructive", title: "Failed to submit review" }),
     });
+    // Property rating is independent — fire it alongside the landlord review.
+    // Skipped silently if the student left no property stars, or if there's no
+    // property on the booking. The unique (booking_id, rater_id) constraint
+    // makes this a no-op if they already rated the property from the listing.
+    if (propertyRating && b.property?.id) {
+      createPropertyRatingMutation.mutate(
+        {
+          propertyId: b.property.id,
+          data: {
+            booking_id: b.id,
+            stars: propertyRating,
+            review_text: reviewText || undefined,
+          },
+        },
+        { onSettled: resetRatingForm },
+      );
+    } else {
+      resetRatingForm();
+    }
+  };
+
+  // Clear every form field after submission so reopening the form starts fresh
+  // — otherwise the previous stars + review text are still pre-filled.
+  const resetRatingForm = () => {
+    setRating(0);
+    setPropertyRating(0);
+    setReviewText("");
+    setShowRating(false);
   };
 
   /**
@@ -740,7 +776,7 @@ function BookingPage() {
             {showRating && (
               <div className="space-y-3">
                 <div>
-                  <Label className="text-sm font-medium mb-2 block">Stars</Label>
+                  <Label className="text-sm font-medium mb-2 block">Landlord</Label>
                   <div className="flex gap-2">
                     {[1, 2, 3, 4, 5].map(s => (
                       <button key={s} onClick={() => setRating(s)}>
@@ -749,22 +785,34 @@ function BookingPage() {
                     ))}
                   </div>
                 </div>
+                {b.property && (
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Property</Label>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map(s => (
+                        <button key={s} onClick={() => setPropertyRating(s)}>
+                          <Star className={`h-7 w-7 transition-colors ${s <= propertyRating ? "fill-primary text-primary" : "text-gray-300"}`} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <Label className="text-sm font-medium mb-1.5 block">Review (optional)</Label>
                   <Textarea
                     value={reviewText}
                     onChange={e => setReviewText(e.target.value)}
-                    placeholder="How was your experience with this landlord?"
+                    placeholder="How was your experience with this landlord and the property?"
                     rows={3}
                   />
                 </div>
                 <Button
                   className="w-full"
                   style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
-                  disabled={!rating || createRatingMutation.isPending}
+                  disabled={!rating || createRatingMutation.isPending || createPropertyRatingMutation.isPending}
                   onClick={handleRating}
                 >
-                  {createRatingMutation.isPending ? "Submitting..." : "Submit Review"}
+                  {createRatingMutation.isPending || createPropertyRatingMutation.isPending ? "Submitting..." : "Submit Review"}
                 </Button>
               </div>
             )}

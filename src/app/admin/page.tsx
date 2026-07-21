@@ -309,7 +309,7 @@ export default function Admin() {
                           <div>
                             <p className="font-semibold text-sm">{u.first_name} {u.last_name}</p>
                             <p className="text-xs text-muted-foreground capitalize">{u.role?.replace("_", " ")} · {u.email}</p>
-                            {u.trust_score && (
+                            {u.trust_score && ["landlord", "agent"].includes(u.role ?? "") && (
                               <div className="mt-0.5">
                                 <TrustBadge score={u.trust_score?.total_score ?? 50} size="sm" />
                               </div>
@@ -516,7 +516,7 @@ export default function Admin() {
                               Target: <span className="text-foreground font-medium">
                                 {r.target_user.first_name} {r.target_user.last_name}
                               </span>
-                              {r.target_user && <TrustBadge score={r.target_user?.trust_score?.total_score ?? 50} size="sm" showLabel={false} />}
+                              {r.target_user && ["landlord", "agent"].includes(r.target_user.role ?? "") && <TrustBadge score={r.target_user?.trust_score?.total_score ?? 50} size="sm" showLabel={false} />}
                             </span>
                           )}
                         </div>

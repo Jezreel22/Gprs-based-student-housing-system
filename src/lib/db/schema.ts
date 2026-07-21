@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, uuid, jsonb, real, date, check, customType, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, uuid, jsonb, real, date, check, customType, index, unique } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Drizzle 0.45 has no first-class `bytea` column, so we declare one. The
@@ -224,7 +224,33 @@ export const ratingsTable = pgTable("ratings", {
   review_text: text("review_text"),
 
   created_at: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  // Restrict rating_type to the single supported direction; guards against
+  // legacy rows or bugs that insert the removed landlord→student variant.
+  check("ratings_rating_type_check",
+    sql`${table.rating_type} = 'student_rates_landlord'`
+  ),
+]);
+
+// ─── property_ratings ──────────────────────────────────────────────────────
+// A student's rating of a *property/listing* — separate from the user-centric
+// `ratings` table (which rates landlords). One row per student per booking:
+// `booking_id` ties it to a real completed stay, and the (booking_id, rater_id)
+// unique constraint dedupes the two submission paths (listing page + booking
+// review flow). `property_id` is denormalized from booking.property_id for cheap
+// listing-page queries.
+export const propertyRatingsTable = pgTable("property_ratings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  property_id: uuid("property_id").notNull().references(() => propertiesTable.id, { onDelete: "cascade" }),
+  booking_id: uuid("booking_id").notNull().references(() => bookingsTable.id, { onDelete: "cascade" }),
+  rater_id: uuid("rater_id").notNull().references(() => usersTable.id),
+  stars: integer("stars").notNull(),
+  review_text: text("review_text"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  unique("property_ratings_booking_rater_unq").on(table.booking_id, table.rater_id),
+  index("property_ratings_property_idx").on(table.property_id),
+]);
 
 // ─── trust_scores ──────────────────────────────────────────────────────────
 export const trustScoresTable = pgTable("trust_scores", {
@@ -366,6 +392,8 @@ export type Message = typeof messagesTable.$inferSelect;
 export type NewMessage = typeof messagesTable.$inferInsert;
 export type Rating = typeof ratingsTable.$inferSelect;
 export type NewRating = typeof ratingsTable.$inferInsert;
+export type PropertyRating = typeof propertyRatingsTable.$inferSelect;
+export type NewPropertyRating = typeof propertyRatingsTable.$inferInsert;
 export type TrustScore = typeof trustScoresTable.$inferSelect;
 export type NewTrustScore = typeof trustScoresTable.$inferInsert;
 export type TrustEvent = typeof trustEventsTable.$inferSelect;
@@ -388,6 +416,7 @@ export const schema = {
   disputesTable,
   messagesTable,
   ratingsTable,
+  propertyRatingsTable,
   trustScoresTable,
   trustEventsTable,
   trustReportsTable,

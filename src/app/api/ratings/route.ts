@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ratingsTable, bookingsTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
@@ -12,7 +12,7 @@ import type { RatingDetail } from "@/api/generated/api.schemas";
 const CreateRatingBody = z.object({
   booking_id: z.string().uuid(),
   ratee_id: z.string().uuid(),
-  rating_type: z.enum(["student_rates_landlord", "landlord_rates_student"]),
+  rating_type: z.enum(["student_rates_landlord"]),
   stars: z.number().int().min(1).max(5),
   review_text: z.string().max(2000).optional(),
 });
@@ -25,9 +25,10 @@ export async function GET(req: NextRequest) {
     const limit = getIntParam(params, "limit", 20);
 
     // If ratee_id given, fetch ratings about that user; otherwise most-recent global.
+    // Only student→landlord reviews exist; the other direction was removed.
     const rows = rateeId
-      ? await db.select().from(ratingsTable).where(eq(ratingsTable.ratee_id, rateeId)).limit(limit)
-      : await db.select().from(ratingsTable).limit(limit);
+      ? await db.select().from(ratingsTable).where(and(eq(ratingsTable.ratee_id, rateeId), eq(ratingsTable.rating_type, "student_rates_landlord"))).limit(limit)
+      : await db.select().from(ratingsTable).where(eq(ratingsTable.rating_type, "student_rates_landlord")).limit(limit);
 
     const data: RatingDetail[] = rows.map((r) => ({
       id: r.id,
@@ -53,8 +54,13 @@ export async function POST(req: NextRequest) {
 
     const [booking] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, body.booking_id)).limit(1);
     if (!booking) return errorResponse("Booking not found", 404);
-    if (booking.student_id !== me.id && booking.landlord_id !== me.id) {
+    // Only the student who booked can leave a review, and only about the
+    // landlord of that booking. Landlords don't rate students.
+    if (booking.student_id !== me.id) {
       return errorResponse("Not authorized to rate this booking", 403);
+    }
+    if (body.ratee_id !== booking.landlord_id) {
+      return errorResponse("You can only rate the landlord of this booking", 400);
     }
 
     const [rating] = await db.insert(ratingsTable).values({

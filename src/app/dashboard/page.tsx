@@ -179,14 +179,17 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Trust score — visible to every role so the system isn't a black box. */}
-        <div className="mb-8">
-          <TrustCard
-            userId={user.id}
-            role={user.role}
-            verificationStatus={user.verification_status}
-          />
-        </div>
+        {/* Trust score — only landlords and agents are scored; students don't
+            get one, so the card is hidden for them. */}
+        {isLandlord && (
+          <div className="mb-8">
+            <TrustCard
+              userId={user.id}
+              role={user.role}
+              verificationStatus={user.verification_status}
+            />
+          </div>
+        )}
 
         {/* Active booking banner (students) */}
         {isStudent && activeBooking && (

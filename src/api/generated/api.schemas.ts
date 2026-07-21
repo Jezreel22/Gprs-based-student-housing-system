@@ -185,6 +185,26 @@ export interface PhotoItem {
   photo_order?: number;
 }
 
+/**
+ * A student's rating of a *property/listing* — separate from RatingDetail
+ * (which rates landlords). Mirrors `property_ratings` in
+ * drizzle/0002_property_ratings.sql.
+ */
+export interface PropertyRatingDetail {
+  id?: string;
+  booking_id?: string;
+  rater_id?: string;
+  stars?: number;
+  review_text?: string | null;
+  rater?: {
+    id?: string;
+    first_name?: string | null;
+    last_name?: string | null;
+    role?: string | null;
+  };
+  created_at?: string | null;
+}
+
 export interface RatingDetail {
   id?: string;
   booking_id?: string;
@@ -228,6 +248,12 @@ export interface PropertyDetail {
   trust_score?: number;
   photos?: PhotoItem[];
   ratings?: RatingDetail[];
+  /** Property ratings — distinct from landlord ratings. */
+  property_ratings?: PropertyRatingDetail[];
+  /** Average stars across property_ratings, rounded to 1 decimal. */
+  property_rating_average?: number;
+  /** Total count of property_ratings. */
+  property_rating_count?: number;
 }
 
 export type CreatePropertyInputAmenities = {[key: string]: boolean};
@@ -361,7 +387,6 @@ export type CreateRatingInputRatingType = typeof CreateRatingInputRatingType[key
 
 export const CreateRatingInputRatingType = {
   student_rates_landlord: 'student_rates_landlord',
-  landlord_rates_student: 'landlord_rates_student',
 } as const;
 
 export interface CreateRatingInput {

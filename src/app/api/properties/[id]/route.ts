@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { propertiesTable, usersTable, propertyPhotosTable, ratingsTable, bookingsTable, trustScoresTable } from "@/lib/db/schema";
+import { propertiesTable, propertyRatingsTable, usersTable, propertyPhotosTable, ratingsTable, bookingsTable, trustScoresTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse, errorResponse } from "@/lib/api";
 import { formatTrustScore } from "@/lib/format";
-import type { PropertyDetail, RatingDetail } from "@/api/generated/api.schemas";
+import type { PropertyDetail, PropertyRatingDetail, RatingDetail } from "@/api/generated/api.schemas";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const propBookings = await db.select({ id: bookingsTable.id }).from(bookingsTable).where(eq(bookingsTable.property_id, id));
     const bookingIds = propBookings.map((b) => b.id);
     const propRatings = bookingIds.length > 0
-      ? await db.select().from(ratingsTable).where(inArray(ratingsTable.booking_id, bookingIds))
+      ? await db.select().from(ratingsTable).where(and(inArray(ratingsTable.booking_id, bookingIds), eq(ratingsTable.rating_type, "student_rates_landlord")))
       : [];
 
     const raterIds = Array.from(new Set(propRatings.map((r) => r.rater_id)));
@@ -33,6 +33,44 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? await db.select().from(usersTable).where(inArray(usersTable.id, raterIds))
       : [];
     const raterMap = new Map(raters.map((r) => [r.id, r]));
+
+    // Property ratings — student's rating of the listing itself (not the
+    // landlord). Stored separately in property_ratings; the unique
+    // (booking_id, rater_id) constraint guarantees one per stay.
+    const propPropertyRatings = await db
+      .select()
+      .from(propertyRatingsTable)
+      .where(eq(propertyRatingsTable.property_id, id));
+    const propertyRaterIds = Array.from(new Set(propPropertyRatings.map((r) => r.rater_id)));
+    const propertyRaters = propertyRaterIds.length > 0
+      ? await db.select().from(usersTable).where(inArray(usersTable.id, propertyRaterIds))
+      : [];
+    const propertyRaterMap = new Map(propertyRaters.map((r) => [r.id, r]));
+    const propertyRatingsFormatted: PropertyRatingDetail[] = propPropertyRatings
+      .sort((a, b) => (b.created_at?.getTime() ?? 0) - (a.created_at?.getTime() ?? 0))
+      .map((r) => {
+        const rater = propertyRaterMap.get(r.rater_id);
+        return {
+          id: r.id,
+          booking_id: r.booking_id,
+          rater_id: r.rater_id,
+          stars: r.stars,
+          review_text: r.review_text ?? null,
+          rater: rater ? {
+            id: rater.id,
+            first_name: rater.first_name,
+            last_name: rater.last_name,
+            role: rater.role,
+          } : undefined,
+          created_at: r.created_at?.toISOString() ?? null,
+        };
+      });
+    const propertyRatingAverage = propPropertyRatings.length
+      ? Math.round(
+          (propPropertyRatings.reduce((sum, r) => sum + r.stars, 0) / propPropertyRatings.length) * 10,
+        ) / 10
+      : 0;
+    const propertyRatingCount = propPropertyRatings.length;
 
     const ratingsFormatted: RatingDetail[] = propRatings.map((r) => {
       const rater = raterMap.get(r.rater_id);
@@ -92,6 +130,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         photo_order: p.photo_order ?? 0,
       })),
       ratings: ratingsFormatted,
+      // Property ratings live alongside landlord ratings but on a different
+      // table; the generated PropertyDetail schema doesn't include these
+      // fields, so cast through unknown — runtime shape is what callers use.
+      property_ratings: propertyRatingsFormatted,
+      property_rating_average: propertyRatingAverage,
+      property_rating_count: propertyRatingCount,
     };
     return jsonResponse(response);
   } catch (err) {

@@ -8,8 +8,10 @@
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:push": "drizzle-kit push",
-    "db:migrate": "tsx src/lib/db/migrate.ts",
+    "db:push": "echo 'db:push is broken on this Supabase DB \\u2014 see drizzle/README.md. Use db:apply.' && exit 1",
+    "db:migrate": "echo 'db:migrate is broken on this Supabase DB \\u2014 see drizzle/README.md. Use db:apply.' && exit 1",
+    "db:apply": "tsx src/lib/db/apply-migration.ts",
+    "db:apply:list": "tsx src/lib/db/apply-migration.ts",
     "db:seed": "tsx src/lib/db/seed.ts",
     "trust:backfill": "tsx src/lib/trust/backfill.ts"
   },
@@ -78,6 +80,7 @@
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
     "@types/bcryptjs": "^2.4.6",
+    "@types/google.maps": "3.65.2",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^25.3.3",
     "@types/react": "^19.2.0",

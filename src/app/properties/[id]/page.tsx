@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { getGetPropertyQueryOptions } from "@/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getGetPropertyQueryOptions, getGetBookingsQueryOptions, useCreatePropertyRating } from "@/api";
 import NavBar from "@/components/NavBar";
 import TrustBadge from "@/components/TrustBadge";
 import Avatar from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import {
   Bed, MapPin, Wifi, Zap, Droplets, Shield, Car, ChefHat,
   Star, ShieldCheck, ShieldAlert, MessageSquare, ChevronLeft, ChevronRight,
@@ -73,6 +76,66 @@ export default function PropertyDetail() {
     getGetPropertyQueryOptions(params.id)
   );
 
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const submitRef = useRef(false);   // prevent double-submit race
+  const { data: myBookings } = useQuery({
+    ...getGetBookingsQueryOptions(),
+    // Only relevant once we know who's browsing — guests have no session.
+    enabled: hydrated && !!user,
+  });
+
+  // A completed booking for THIS property lets a student rate the property.
+  // `BookingDetail` marks every field optional for spec conformance, but the
+  // runtime always returns ids — narrow locally so we can use `id` safely.
+  const completedBookingForProperty = (myBookings ?? []).find(
+    (b: { property?: { id?: string }; booking_status?: string }) =>
+      b.property?.id === params.id && b.booking_status === "completed",
+  ) as ({ id: string } & Record<string, unknown>) | undefined;
+  const isStudent = user?.role === "student";
+  const canRateProperty = hydrated && isStudent && !!completedBookingForProperty;
+
+  // Property ratings live alongside landlord ratings on the detail response.
+  const propertyRatings: any[] = property?.property_ratings ?? [];
+  const propertyRatingAverage: number = property?.property_rating_average ?? 0;
+  const propertyRatingCount: number = property?.property_rating_count ?? 0;
+  // Has this student already rated the property? (Dedupe-keyed by booking.)
+  const alreadyRatedProperty = !!completedBookingForProperty && propertyRatings.some(
+    (r) => r.booking_id === completedBookingForProperty.id,
+  );
+
+  const [showPropertyRating, setShowPropertyRating] = useState(false);
+  const [propertyStars, setPropertyStars] = useState(0);
+  const [propertyReviewText, setPropertyReviewText] = useState("");
+
+  const createPropertyRatingMutation = useCreatePropertyRating({
+    mutation: {
+      onSuccess: async () => {
+        submitRef.current = false;
+        toast({ title: "Property rated! ⭐" });
+        setShowPropertyRating(false);
+        setPropertyStars(0);
+        setPropertyReviewText("");
+        await queryClient.invalidateQueries({ queryKey: ["getProperty", params.id] });
+      },
+      onError: () => { submitRef.current = false; toast({ variant: "destructive", title: "Failed to submit rating" }); },
+    },
+  });
+
+  const handleRateProperty = () => {
+    if (!completedBookingForProperty || !propertyStars || !params.id) return;
+    if (submitRef.current) return;
+    submitRef.current = true;
+    createPropertyRatingMutation.mutate({
+      propertyId: params.id,
+      data: {
+        booking_id: completedBookingForProperty.id,
+        stars: propertyStars,
+        review_text: propertyReviewText || undefined,
+      },
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#F7F7F7]">
@@ -114,7 +177,7 @@ export default function PropertyDetail() {
   const amenities = (property.amenities ?? {}) as Record<string, boolean>;
   const activeAmenities = Object.entries(amenities).filter(([, v]) => v);
   const landlord = property.landlord as any;
-  const trustScore = property.trust_score ?? 0;
+  const trustScore = property.trust_score ?? 50;
   const landlordTrust = landlord?.trust_score ?? null;
   const isOwnListing = user && landlord && user.id === landlord.id;
   const canBook = user?.role === "student" && property.listing_status === "live" && !isOwnListing;
@@ -226,9 +289,10 @@ export default function PropertyDetail() {
                 <TrustBadge score={trustScore} size="md" />
               </div>
 
-              {/* Ratings summary */}
+              {/* Landlord ratings summary (student → landlord reviews) */}
               {ratings.length > 0 && (
                 <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs font-medium text-muted-foreground">Landlord</span>
                   <div className="flex gap-0.5">
                     {[1, 2, 3, 4, 5].map(s => {
                       const avg = ratings.reduce((a: number, r: any) => a + r.stars, 0) / ratings.length;
@@ -236,6 +300,21 @@ export default function PropertyDetail() {
                     })}
                   </div>
                   <span className="text-sm text-muted-foreground">{ratings.length} review{ratings.length !== 1 ? "s" : ""}</span>
+                </div>
+              )}
+
+              {/* Property ratings summary (student → property reviews) */}
+              {propertyRatingCount > 0 && (
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Property</span>
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Star key={s} className={`h-4 w-4 ${s <= Math.round(propertyRatingAverage) ? "fill-primary text-primary" : "text-gray-200"}`} />
+                    ))}
+                  </div>
+                  <span className="text-sm text-muted-foreground">
+                    {propertyRatingAverage.toFixed(1)} · {propertyRatingCount} review{propertyRatingCount !== 1 ? "s" : ""}
+                  </span>
                 </div>
               )}
             </div>
@@ -336,33 +415,91 @@ export default function PropertyDetail() {
               </div>
             </div>
 
-            {/* Reviews */}
-            {ratings.length > 0 && (
-              <div className="bg-white rounded-2xl p-6 border border-[#EBEBEB]">
-                <h2 className="text-base font-bold text-foreground mb-4">
-                  Reviews ({ratings.length})
-                </h2>
-                <div className="space-y-4">
-                  {ratings.slice(0, 4).map((r: any) => (
-                    <div key={r.id} className="border-b border-[#EBEBEB] last:border-0 pb-4 last:pb-0">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar user={r.rater} size={36} />
-                          <div>
-                            <p className="text-sm font-semibold">{r.rater?.first_name} {r.rater?.last_name}</p>
-                            <p className="text-xs text-muted-foreground">{r.created_at ? new Date(r.created_at).toLocaleDateString("en-NG", { month: "short", year: "numeric" }) : ""}</p>
+            {/* Reviews — property + landlord reviews, newest first. Each card
+                is tagged so a reader can tell what's being reviewed. */}
+            {(propertyRatings.length > 0 || ratings.length > 0) && (() => {
+              const tagged = [
+                ...propertyRatings.map((r: any) => ({ ...r, __kind: "property" })),
+                ...ratings.map((r: any) => ({ ...r, __kind: "landlord" })),
+              ].sort((a: any, b: any) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+              const total = tagged.length;
+              return (
+                <div className="bg-white rounded-2xl p-6 border border-[#EBEBEB]">
+                  <h2 className="text-base font-bold text-foreground mb-4">
+                    Reviews ({total})
+                  </h2>
+                  <div className="space-y-4">
+                    {tagged.slice(0, 6).map((r: any) => (
+                      <div key={r.id} className="border-b border-[#EBEBEB] last:border-0 pb-4 last:pb-0">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar user={r.rater} size={36} />
+                            <div>
+                              <p className="text-sm font-semibold">{r.rater?.first_name} {r.rater?.last_name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {r.created_at ? new Date(r.created_at).toLocaleDateString("en-NG", { month: "short", year: "numeric" }) : ""}
+                              </p>
+                            </div>
+                            <span className="ml-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                              {r.__kind === "property" ? "Property" : "Landlord"}
+                            </span>
+                          </div>
+                          <div className="flex gap-0.5">
+                            {[1, 2, 3, 4, 5].map(s => (
+                              <Star key={s} className={`h-3.5 w-3.5 ${s <= r.stars ? "fill-primary text-primary" : "text-gray-200"}`} />
+                            ))}
                           </div>
                         </div>
-                        <div className="flex gap-0.5">
-                          {[1, 2, 3, 4, 5].map(s => (
-                            <Star key={s} className={`h-3.5 w-3.5 ${s <= r.stars ? "fill-primary text-primary" : "text-gray-200"}`} />
-                          ))}
-                        </div>
+                        {r.review_text && <p className="text-sm text-muted-foreground leading-relaxed">{r.review_text}</p>}
                       </div>
-                      {r.review_text && <p className="text-sm text-muted-foreground leading-relaxed">{r.review_text}</p>}
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
+              );
+            })()}
+
+            {/* Rate this property — only students with a completed booking here. */}
+            {canRateProperty && !alreadyRatedProperty && (
+              <div className="bg-white rounded-2xl p-6 border border-[#EBEBEB]">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-bold text-foreground">Rate This Property</h2>
+                  {!showPropertyRating && (
+                    <Button size="sm" variant="outline" onClick={() => setShowPropertyRating(true)}>
+                      Leave a Review
+                    </Button>
+                  )}
+                </div>
+                {showPropertyRating && (
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-sm font-medium mb-2 block">Stars</Label>
+                      <div className="flex gap-2">
+                        {[1, 2, 3, 4, 5].map(s => (
+                          <button key={s} type="button" onClick={() => setPropertyStars(s)}>
+                            <Star className={`h-7 w-7 transition-colors ${s <= propertyStars ? "fill-primary text-primary" : "text-gray-300"}`} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium mb-1.5 block">Review (optional)</Label>
+                      <Textarea
+                        value={propertyReviewText}
+                        onChange={(e) => setPropertyReviewText(e.target.value)}
+                        placeholder="How was the property — accuracy, condition, value?"
+                        rows={3}
+                      />
+                    </div>
+                    <Button
+                      className="w-full"
+                      style={{ background: "#FF5A5F", color: "#fff", border: "none" }}
+                      disabled={!propertyStars || createPropertyRatingMutation.isPending}
+                      onClick={handleRateProperty}
+                    >
+                      {createPropertyRatingMutation.isPending ? "Submitting..." : "Submit Review"}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

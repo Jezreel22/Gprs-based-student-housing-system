@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
+let nextConfig: NextConfig = {
+
+
+
+
   // reactStrictMode: true,
   //
   // // Apply security headers to every route. The CSP is intentionally a bit
@@ -43,4 +47,3 @@ const nextConfig: NextConfig = {
   // },
 };
 
-export default nextConfig;
