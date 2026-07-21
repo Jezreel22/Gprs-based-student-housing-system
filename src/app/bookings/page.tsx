@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft, ArrowRight, CreditCard, MessageSquare, Lock,
-  ShoppingBag, CheckCircle, XCircle, Clock,
+  ShoppingBag, CheckCircle, XCircle, Clock, Receipt
 } from "lucide-react";
+import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 
 interface StoredUser {
   id: string;
@@ -59,10 +60,10 @@ function BookingRow({ b, user }: { b: any; user: StoredUser }) {
       {/* Hero thumbnail */}
       <div className="w-full sm:w-24 h-24 rounded-xl bg-gray-100 overflow-hidden shrink-0">
         <img
-          src={b.property?.hero_photo_url || "/placeholder-house.svg"}
+          src={b.property?.hero_photo_url || pickListingPhoto(b.property?.id ?? b.id ?? "default")}
           alt=""
           className="w-full h-full object-cover"
-          onError={e => { (e.target as HTMLImageElement).src = "/placeholder-house.svg"; }}
+          onError={e => { (e.target as HTMLImageElement).src = LISTING_PHOTOS[0]; }}
         />
       </div>
 
@@ -201,7 +202,7 @@ export default function MyBookings() {
           </div>
         ) : bookings.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-[#EBEBEB]">
-            <div className="text-5xl mb-4">🧾</div>
+            <Receipt className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
             <h3 className="text-lg font-semibold mb-2">No bookings yet</h3>
             <p className="text-muted-foreground mb-6">
               {user.role === "student"

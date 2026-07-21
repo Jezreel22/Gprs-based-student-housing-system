@@ -10,7 +10,7 @@ import PropertyCard from "@/components/PropertyCard";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal, X, AlertTriangle, Search } from "lucide-react";
 
 function PropertiesPage() {
   const searchParams = useSearchParams();
@@ -184,13 +184,13 @@ function PropertiesPage() {
           </div>
         ) : error ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-[#EBEBEB]">
-            <div className="text-5xl mb-4">⚠️</div>
+            <AlertTriangle className="h-12 w-12 mx-auto mb-3 text-amber-500 opacity-80" />
             <h3 className="text-lg font-semibold mb-2">Failed to load listings</h3>
             <p className="text-muted-foreground">Please try again in a moment.</p>
           </div>
         ) : properties.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-[#EBEBEB]">
-            <div className="text-5xl mb-4">🔍</div>
+            <Search className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
             <h3 className="text-lg font-semibold mb-2">No listings found</h3>
             <p className="text-muted-foreground mb-4">Try adjusting your filters or check back later.</p>
             {hasFilters && (

@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Home, Plus, ShieldCheck, ShieldAlert, Calendar, Clock,
-  AlertCircle, Lock, ArrowRight, MessageSquare, CreditCard
+  AlertCircle, Lock, ArrowRight, MessageSquare, CreditCard, ClipboardList, Search
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -138,7 +138,7 @@ export default function Dashboard() {
             />
             <div>
               <h1 className="text-2xl font-bold text-foreground">
-                Welcome back, {user.first_name ?? user.email.split("@")[0]}! 👋
+                Welcome back, {user.first_name ?? user.email.split("@")[0]}
               </h1>
               <div className="flex items-center gap-2 mt-1">
               <span className="text-sm text-muted-foreground capitalize">
@@ -252,7 +252,7 @@ export default function Dashboard() {
             <TabsContent value="listings">
               {properties.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
-                  <div className="text-5xl mb-4">🏠</div>
+                  <Home className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
                   <h3 className="text-lg font-semibold mb-2">No listings yet</h3>
                   <p className="text-muted-foreground mb-6">Create your first property listing to start receiving bookings.</p>
                   <Link href="/properties/new">
@@ -303,7 +303,7 @@ export default function Dashboard() {
             <TabsContent value="bookings">
               {bookings.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
-                  <div className="text-5xl mb-4">📋</div>
+                  <ClipboardList className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
                   <h3 className="text-lg font-semibold mb-2">No bookings yet</h3>
                   <p className="text-muted-foreground">Once students book your properties, they'll appear here.</p>
                 </div>
@@ -370,7 +370,7 @@ export default function Dashboard() {
             <TabsContent value="bookings">
               {bookings.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
-                  <div className="text-5xl mb-4">🔍</div>
+                  <Search className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
                   <h3 className="text-lg font-semibold mb-2">No bookings yet</h3>
                   <p className="text-muted-foreground mb-6">Browse our verified listings and book your ideal student home.</p>
                   <Link href="/properties">
@@ -425,7 +425,7 @@ export default function Dashboard() {
 
             <TabsContent value="browse">
               <div className="bg-white rounded-2xl border border-[#EBEBEB] p-8 text-center">
-                <div className="text-5xl mb-4">🏠</div>
+                <Home className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
                 <h3 className="text-xl font-semibold mb-3">Find Your Perfect Home</h3>
                 <p className="text-muted-foreground mb-6">Browse all verified listings near NAUB campus</p>
                 <Link href="/properties">

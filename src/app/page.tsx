@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import {
   Search, Shield, Star, MapPin, ArrowRight,
   Lock, CheckCircle, Home as HomeIcon, Building2, Bed, Wifi,
-  BadgeCheck, Navigation, ChevronRight, Phone, Mail, Facebook, Twitter, Instagram
+  BadgeCheck, Navigation, ChevronRight, Phone, Mail, Facebook, Twitter, Instagram,
+  WifiOff
 } from "lucide-react";
 
 const STATS = [
@@ -118,9 +119,12 @@ export default function Home() {
     if (raw) try { setUser(JSON.parse(raw)); } catch {}
   }, []);
 
-  const { data: propertiesData } = useQuery(
-    getGetPropertiesQueryOptions({ sort: "newest", page_size: 6 })
-  );
+  const {
+    data: propertiesData,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery(getGetPropertiesQueryOptions({ sort: "newest", page_size: 6 }));
 
   const featured = propertiesData?.data ?? [];
 
@@ -251,7 +255,29 @@ export default function Home() {
             </Link>
           </div>
 
-          {featured.length > 0 ? (
+          {isLoading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-6 gap-y-8">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="bg-white rounded-xl overflow-hidden border border-[#EBEBEB] animate-pulse">
+                  <div className="aspect-[4/3] bg-gray-200" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 bg-gray-200 rounded w-3/4" />
+                    <div className="h-3 bg-gray-200 rounded w-1/2" />
+                    <div className="h-5 bg-gray-200 rounded w-1/3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : error ? (
+            <div className="text-center py-20 bg-white rounded-2xl border border-[#EBEBEB]">
+              <WifiOff className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
+              <h3 className="text-lg font-semibold mb-2">Couldn&rsquo;t load listings</h3>
+              <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+                Check your internet connection and try again.
+              </p>
+              <Button variant="outline" onClick={() => refetch()}>Try again</Button>
+            </div>
+          ) : featured.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-6 gap-y-8">
               {featured.map(property => (
                 <PropertyCard key={property.id} property={property} />
@@ -259,7 +285,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="text-center py-20 bg-white rounded-2xl border border-[#EBEBEB]">
-              <div className="text-5xl mb-4">🏠</div>
+              <HomeIcon className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
               <h3 className="text-lg font-semibold mb-2">Listings coming soon</h3>
               <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
                 No listings yet — check back soon or be the first to list.

@@ -14,11 +14,12 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { pickListingPhotos } from "@/lib/listing-photos";
 import {
   Bed, MapPin, Wifi, Zap, Droplets, Shield, Car, ChefHat,
   Star, ShieldCheck, ShieldAlert, MessageSquare, ChevronLeft, ChevronRight,
   FileCheck, Images, Lock, BadgeCheck, Phone, ExternalLink, Calendar,
-  Home, CheckCircle2
+  Home, CheckCircle2, Building2
 } from "lucide-react";
 
 const AMENITY_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
@@ -39,9 +40,9 @@ function getPhotoUrls(property: any): string[] {
   if (property.photos && property.photos.length > 0) {
     return property.photos.map((p: any) => p.photo_url);
   }
-  // No uploaded photos — fall back to a bundled house illustration so the
-  // gallery always looks like a property.
-  return ["/placeholder-house.svg"];
+  // No uploaded photos — fall back to a stable rotation of bundled listing
+  // photos keyed off the property id so each listing looks distinct.
+  return pickListingPhotos(property?.id ?? "default", 4);
 }
 
 function StatusBadge({ status }: { status?: string | null }) {
@@ -112,7 +113,7 @@ export default function PropertyDetail() {
     mutation: {
       onSuccess: async () => {
         submitRef.current = false;
-        toast({ title: "Property rated! ⭐" });
+        toast({ title: "Property rated" });
         setShowPropertyRating(false);
         setPropertyStars(0);
         setPropertyReviewText("");
@@ -160,7 +161,7 @@ export default function PropertyDetail() {
       <div className="min-h-screen bg-[#F7F7F7]">
         <NavBar />
         <div className="max-w-6xl mx-auto px-4 py-32 text-center">
-          <div className="text-6xl mb-4">🏚️</div>
+          <Building2 className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-60" />
           <h2 className="text-2xl font-bold mb-2">Property not found</h2>
           <p className="text-muted-foreground mb-6">This listing may have been removed or is no longer available.</p>
           <Link href="/properties">

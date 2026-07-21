@@ -37,6 +37,7 @@ import { NAUB_COORDS, NAUB_DEFAULT_ZOOM } from "@/lib/maps/constants";
 import { trustLevelLabel, trustLevelForScore } from "@/lib/trust/levels";
 import { TRUST_LEVEL_STYLES } from "@/components/trust-level-styles";
 import type { MapBounds, MapCentre, NearbyProperty } from "@/lib/maps/types";
+import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 import { Loader2, MapPin, AlertTriangle } from "lucide-react";
 
 export interface MapViewHandle {
@@ -70,7 +71,7 @@ function buildInfoWindowContent(
       ? formatDistance(p.distance_from_centre_km, "from your location")
       : null;
   const verified = p.landlord?.verification_status === "verified";
-  const img = p.hero_photo_url ?? "/placeholder-house.svg";
+  const img = p.hero_photo_url ?? pickListingPhoto(p.id ?? "default");
 
   return `
     <div style="font-family:'Plus Jakarta Sans',sans-serif;width:260px;border-radius:12px;overflow:hidden;background:#fff;">
@@ -79,12 +80,12 @@ function buildInfoWindowContent(
           src="${img}"
           alt="Property"
           style="width:100%;height:140px;object-fit:cover;display:block;"
-          onerror="this.src='/placeholder-house.svg'"
+          onerror={'this.src="/listings/listing-1.jpeg"'}
         />
         ${
           verified
             ? `<div style="position:absolute;top:8px;right:8px;background:rgba(255,255,255,0.95);border-radius:20px;padding:3px 9px;font-size:11px;font-weight:700;color:#16A34A;display:flex;align-items:center;gap:4px;">
-                ✓ Verified
+                Verified
               </div>`
             : ""
         }
@@ -102,8 +103,8 @@ function buildInfoWindowContent(
           </span>
           <span style="font-size:11px;color:#717171;">${p.rooms} ${p.rooms === 1 ? "room" : "rooms"}</span>
         </div>
-        <div style="font-size:11px;color:#717171;margin-bottom:4px;">📍 ${distFromNaub}</div>
-        ${distFromUser ? `<div style="font-size:11px;color:#717171;margin-bottom:8px;">📍 ${distFromUser}</div>` : ""}
+        <div style="font-size:11px;color:#717171;margin-bottom:4px;">${distFromNaub} from NAUB</div>
+        ${distFromUser ? `<div style="font-size:11px;color:#717171;margin-bottom:8px;">${distFromUser}</div>` : ""}
         <div style="display:flex;gap:8px;margin-top:8px;">
           <a
             href="/properties/${p.id}"
@@ -175,7 +176,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
           `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
             <rect x="4" y="4" width="32" height="32" rx="8" fill="#1E3A5F" stroke="white" stroke-width="2.5"/>
-            <text x="20" y="26" font-size="18" text-anchor="middle" fill="white">🎓</text>
+            <text x="20" y="26" font-size="16" text-anchor="middle" fill="white" font-family="sans-serif" font-weight="700">N</text>
           </svg>`
         )}`,
         scaledSize: new google.maps.Size(40, 40),

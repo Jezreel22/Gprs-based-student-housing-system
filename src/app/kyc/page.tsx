@@ -338,7 +338,7 @@ export default function KYC() {
             <ShieldCheck className="h-10 w-10 text-green-600" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold mb-2">You're verified! 🎉</h2>
+            <h2 className="text-2xl font-bold mb-2">You&rsquo;re verified</h2>
             <p className="text-muted-foreground text-sm leading-relaxed">
               Your identity is verified. You can list properties now and start receiving bookings.
             </p>
@@ -371,7 +371,7 @@ export default function KYC() {
             <ShieldCheck className="h-10 w-10 text-green-600" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold mb-2">You're verified ✅</h2>
+            <h2 className="text-2xl font-bold mb-2">You&rsquo;re verified</h2>
             <p className="text-muted-foreground text-sm leading-relaxed">
               Your identity was verified
               {submitted && (

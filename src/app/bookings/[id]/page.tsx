@@ -11,6 +11,7 @@ import {
 } from "@/api";
 import { initializePayment, verifyPayment } from "@/lib/payment-client";
 import { payWithPaystack, PAYSTACK_CLOSED } from "@/lib/paystack-inline";
+import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 import NavBar from "@/components/NavBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2, MessageSquare } from "lucide-react";
+import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2, MessageSquare, Banknote, Home, Receipt } from "lucide-react";
 
 function formatNGN(n?: number | null) {
   return n ? `₦${n.toLocaleString("en-NG")}` : "₦—";
@@ -64,7 +65,7 @@ const ESCROW_STEPS: { key: string; label: string }[] = [
 ];
 
 function propertyHero(property: any): string {
-  return property?.hero_photo_url || "/placeholder-house.svg";
+  return property?.hero_photo_url || pickListingPhoto(property?.id ?? "default");
 }
 
 // NEW BOOKING: /bookings/new?property_id=xxx
@@ -98,6 +99,19 @@ function BookingPage() {
     ...getGetBookingQueryOptions(bookingId ?? ""),
     enabled: !!bookingId,
   });
+
+  // Poll while in release_pending so the student sees live completion as soon as
+  // the officer marks disbursed (managed mode) or the Paystack webhook fires
+  // (transfer mode). The effect stops itself automatically once the status
+  // changes — no stale poll after the booking is settled.
+  useEffect(() => {
+    if (!bookingId || !booking) return;
+    const b = booking as any;
+    if (b.booking_status !== "release_pending") return;
+    const id = setInterval(() => refetchBooking(), 5000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingId, booking]);
 
   const createBookingMutation = useCreateBooking();
   const confirmOccupancyMutation = useConfirmOccupancy();
@@ -168,7 +182,7 @@ function BookingPage() {
       popupResolved = true;
       const verification = await verifyPayment(result.reference);
       if (verification.status === "success") {
-        toast({ title: "Payment successful 🎉", description: "Funds are now held in escrow." });
+        toast({ title: "Payment successful", description: "Funds are now held in escrow." });
         await queryClient.invalidateQueries({ queryKey: ["booking", bookingId] });
       } else {
         toast({ variant: "destructive", title: "Payment not confirmed", description: "If you were charged, your bank will reflect it shortly." });
@@ -219,7 +233,7 @@ function BookingPage() {
       },
     }, {
       onSuccess: () => {
-        toast({ title: "Occupancy confirmed! 🏠", description: "Escrow will be released after the review period." });
+        toast({ title: "Occupancy confirmed", description: "Escrow will be released after the review period." });
         refetchBooking();
         setOccupancyCode("");
       },
@@ -255,7 +269,7 @@ function BookingPage() {
       },
     }, {
       onSuccess: () => {
-        toast({ title: "Review submitted! ⭐" });
+        toast({ title: "Review submitted" });
         // Property rating mutation also calls resetRatingForm in onSettled;
         // this one resets if the property side didn't fire.
         if (!propertyRating || !b.property?.id) resetRatingForm();
@@ -307,7 +321,7 @@ function BookingPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-      toast({ title: "Payment released 🎉", description: "Funds are on their way to the landlord." });
+      toast({ title: "Payment released", description: "Funds are on their way to the landlord." });
       refetchBooking();
     } catch (e: any) {
       toast({
@@ -345,10 +359,10 @@ function BookingPage() {
             <div className="flex gap-4">
               <div className="w-20 h-20 rounded-xl bg-gray-100 overflow-hidden shrink-0">
                 <img
-                  src={(property.photos?.[0]?.photo_url) || "/placeholder-house.svg"}
+                  src={(property.photos?.[0]?.photo_url) || pickListingPhoto(property.id ?? "default")}
                   alt="Property"
                   className="w-full h-full object-cover"
-                  onError={e => { (e.target as HTMLImageElement).src = "/placeholder-house.svg"; }}
+                  onError={e => { (e.target as HTMLImageElement).src = LISTING_PHOTOS[0]; }}
                 />
               </div>
               <div>
@@ -481,7 +495,7 @@ function BookingPage() {
               src={propertyHero(b.property)}
               alt=""
               className="w-full h-full object-cover"
-              onError={e => { (e.target as HTMLImageElement).src = "/placeholder-house.svg"; }}
+              onError={e => { (e.target as HTMLImageElement).src = LISTING_PHOTOS[0]; }}
             />
             <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.12) 48%, rgba(0,0,0,0) 100%)" }} />
             <div className="absolute top-3 right-3">
@@ -615,7 +629,11 @@ function BookingPage() {
             {b.booking_status === "release_pending" && (
               <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                 <Loader2 className="h-3.5 w-3.5 mt-0.5 animate-spin shrink-0" />
-                <span>Transfer initiated — funds will appear in the landlord's account shortly.</span>
+                <span>
+                  {b.payout_transfer_reference
+                    ? "Transfer initiated — funds will appear in the landlord's account shortly."
+                    : "Our team will send the payout to the landlord's bank account within 24 hours."}
+                </span>
               </div>
             )}
             {b.booking_status === "release_failed" && (
@@ -630,7 +648,7 @@ function BookingPage() {
         {/* PAY INTO ESCROW (student, pending_payment) */}
         {isStudent && b.booking_status === "pending_payment" && (
           <div className="bg-white rounded-2xl border-2 border-primary p-6 mb-5">
-            <h2 className="font-bold text-lg mb-1">💳 Complete your payment</h2>
+            <h2 className="font-bold text-lg mb-1 flex items-center gap-2"><CreditCard className="h-5 w-5 text-primary" /> Complete your payment</h2>
             <p className="text-sm text-muted-foreground mb-5">
               Your booking is reserved but not yet paid. Pay {formatNGN(b.total_amount_ngn)} into escrow to confirm it.
             </p>
@@ -649,7 +667,7 @@ function BookingPage() {
         {/* OCCUPANCY VERIFICATION (student, pending_occupancy) */}
         {isStudent && b.booking_status === "pending_occupancy" && (
           <div className="bg-white rounded-2xl border-2 border-primary p-6 mb-5">
-            <h2 className="font-bold text-lg mb-1">🏠 Confirm Your Move-in</h2>
+            <h2 className="font-bold text-lg mb-1 flex items-center gap-2"><Home className="h-5 w-5 text-primary" /> Confirm Your Move-in</h2>
             <p className="text-sm text-muted-foreground mb-5">
               Enter the 6-character code your landlord gave you. Optionally share your GPS location for faster verification.
             </p>
@@ -693,7 +711,7 @@ function BookingPage() {
             moves the actual money. Until they click, the landlord isn't paid. */}
         {isStudent && b.booking_status === "pending_review" && (
           <div className="bg-white rounded-2xl border-2 border-primary p-6 mb-5">
-            <h2 className="font-bold text-lg mb-1">💸 Release Payment to Landlord</h2>
+            <h2 className="font-bold text-lg mb-1 flex items-center gap-2"><Banknote className="h-5 w-5 text-primary" /> Release Payment to Landlord</h2>
             <p className="text-sm text-muted-foreground mb-5">
               Your move-in is confirmed and {formatNGN(b.total_amount_ngn)} is held in escrow.
               When you're satisfied, click to release it to {b.landlord?.first_name ?? "the landlord"}. Paystack handles the transfer.
@@ -717,7 +735,7 @@ function BookingPage() {
               className="text-sm text-muted-foreground hover:text-destructive transition-colors underline-offset-2 hover:underline"
               onClick={() => setShowDispute(true)}
             >
-              Problem with the property? File a dispute →
+              Problem with the property? File a dispute
             </button>
           </div>
         )}

@@ -54,7 +54,17 @@ const SEED_PROPERTY = {
   longitude: 12.1909,
 };
 
-const PHOTO_URL = "/placeholder-house.svg";
+const PHOTO_URLS = [
+  "/listings/listing-1.jpeg",
+  "/listings/listing-2.jpeg",
+  "/listings/listing-3.jpeg",
+  "/listings/listing-4.jpeg",
+  "/listings/listing-5.jpeg",
+  "/listings/listing-6.jpeg",
+  "/listings/listing-7.jpeg",
+  "/listings/listing-8.jpeg",
+  "/listings/listing-9.jpeg",
+];
 
 function generateOccupancyCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -140,11 +150,9 @@ async function seedPropertyForLandlord() {
 
       if (!property) throw new Error("insert returned no row");
 
-      await db.insert(propertyPhotosTable).values({
-        property_id: property.id,
-        photo_url: PHOTO_URL,
-        photo_order: 0,
-      });
+      await db.insert(propertyPhotosTable).values(
+        PHOTO_URLS.map((photo_url, photo_order) => ({ property_id: property.id, photo_url, photo_order })),
+      );
 
       return { inserted: 1, skipped: 0 };
     } catch (err) {

@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
     await createNotification({
       userId: user.id,
       type: "system",
-      title: "You're verified ✅",
+      title: "You're verified",
       body: "Your identity is verified. You can now list properties and receive bookings.",
     });
 

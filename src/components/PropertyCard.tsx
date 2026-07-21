@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Star } from "lucide-react";
 import type { PropertySummary } from "@/api";
 import { trustLevelForScore, trustLevelLabel } from "@/lib/trust/levels";
+import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 import { TRUST_LEVEL_STYLES } from "./trust-level-styles";
 
 interface PropertyCardProps {
@@ -17,10 +18,11 @@ function formatNGN(amount?: number | null) {
 
 function getPhotoUrl(property: PropertySummary) {
   if (property.hero_photo_url) return property.hero_photo_url;
-  // Fallback to a bundled house illustration so every listing without an
-  // uploaded photo still looks like a property. Previously used picsum.photos,
-  // which returned random photos — sometimes houses, sometimes landscapes.
-  return "/placeholder-house.svg";
+  // Fall back to a stable rotation of bundled listing photos keyed off the
+  // property id — so the same listing always shows the same photo, but
+  // different listings look distinct. The onError fallback below is the
+  // absolute safety net if even those bundled files 404.
+  return pickListingPhoto(property.id ?? "default");
 }
 
 export default function PropertyCard({ property }: PropertyCardProps) {
@@ -45,7 +47,7 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = "/placeholder-house.svg";
+              (e.target as HTMLImageElement).src = LISTING_PHOTOS[0];
             }}
           />
 

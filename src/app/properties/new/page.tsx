@@ -16,8 +16,10 @@ import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, ChevronRight, Check, Home, Plus, ImagePlus, Loader2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, Home, Plus, ImagePlus, Loader2, X, ClipboardList, Lock, ArrowRight } from "lucide-react";
 import { customFetch } from "@/api/custom-fetch";
+import LocationPicker from "@/components/maps/LocationPicker";
+import type { MapCentre } from "@/lib/maps/types";
 
 const step1Schema = z.object({
   address: z.string().min(5, "Full address required (min 5 characters)"),
@@ -52,6 +54,7 @@ export default function ListProperty() {
   const [currentStep, setCurrentStep] = useState(0);
   const [createdPropertyId, setCreatedPropertyId] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>([""]);
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
   // Role gate: don't render the form until we've confirmed the user is a
   // landlord/agent. Students otherwise see the form, hit a 403 on create, and
@@ -117,7 +120,7 @@ export default function ListProperty() {
 
     // Amenities/description/house_rules are step-2 fields — don't send them
     // (empty) here; they're persisted via PUT in handleStep2.
-    createMutation.mutate({ data: values }, {
+    createMutation.mutate({ data: { ...values, latitude: location?.lat, longitude: location?.lng } }, {
       onSuccess: (data) => {
         setCreatedPropertyId(data.id ?? null);
         toast({ title: "Property created!", description: "Now add your description and amenities." });
@@ -161,7 +164,7 @@ export default function ListProperty() {
 
     // Listings auto-publish on create, so step 3 is just "finish" — send
     // the landlord to the live listing page.
-    toast({ title: "Listing is live! 🎉", description: "Students can find and book it from the landing and browse pages." });
+    toast({ title: "Listing is live", description: "Students can find and book it from the landing and browse pages." });
     router.push(`/properties/${createdPropertyId}`);
   };
 
@@ -190,7 +193,7 @@ export default function ListProperty() {
       <div className="min-h-screen bg-[#F7F7F7]">
         <NavBar />
         <div className="max-w-xl mx-auto px-4 py-16 text-center">
-          <div className="text-5xl mb-4">🔒</div>
+          <Lock className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
           <h1 className="text-2xl font-bold mb-2">Landlords only</h1>
           <p className="text-muted-foreground mb-6">
             Listing properties is for landlord and agent accounts. Sign up as a landlord to list a property.
@@ -258,6 +261,14 @@ export default function ListProperty() {
                     <FormMessage />
                   </FormItem>
                 )} />
+
+                {/* Location picker — search for address, then drag pin to confirm exact spot */}
+                <LocationPicker
+                  onChange={(coords: MapCentre | null) => {
+                    if (coords) setLocation({ lat: coords.lat, lng: coords.lng });
+                    else setLocation(null);
+                  }}
+                />
 
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form1.control} name="rent_amount_ngn" render={({ field }) => (
@@ -451,7 +462,7 @@ export default function ListProperty() {
               </div>
 
               <div className="bg-[#F7F7F7] rounded-xl p-4 text-sm text-muted-foreground">
-                <p className="font-medium text-foreground mb-1">📋 What happens next?</p>
+                <p className="font-medium text-foreground mb-1 flex items-center gap-2"><ClipboardList className="h-4 w-4" /> What happens next?</p>
                 <p>Your listing is already live — students can find and book it from the landing page and the browse page. You can edit or remove it later from your dashboard.</p>
               </div>
 
@@ -466,7 +477,7 @@ export default function ListProperty() {
                   onClick={handlePublish}
                   disabled={photoMutation.isPending || uploadingIdx !== null}
                 >
-                  Finish · View Listing →
+                  Finish · View Listing <ArrowRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>

@@ -13,6 +13,7 @@ import { MapPin, Bed, ShieldCheck, ExternalLink, Navigation } from "lucide-react
 import TrustBadge from "@/components/TrustBadge";
 import { formatDistance, formatNGN, buildDirectionsUrl } from "@/lib/maps/utils";
 import type { MapCentre, NearbyProperty } from "@/lib/maps/types";
+import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 
 interface NearbyPropertyCardProps {
   property: NearbyProperty;
@@ -28,7 +29,7 @@ export default function NearbyPropertyCard({
   onClick,
 }: NearbyPropertyCardProps) {
   const verified = p.landlord?.verification_status === "verified";
-  const img = p.hero_photo_url ?? "/placeholder-house.svg";
+  const img = p.hero_photo_url ?? pickListingPhoto(p.id ?? "default");
 
   return (
     <div
@@ -47,7 +48,7 @@ export default function NearbyPropertyCard({
           className="w-full h-full object-cover"
           loading="lazy"
           onError={(e) => {
-            (e.target as HTMLImageElement).src = "/placeholder-house.svg";
+            (e.target as HTMLImageElement).src = LISTING_PHOTOS[0];
           }}
         />
         {verified && (

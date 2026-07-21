@@ -77,6 +77,8 @@ export default function Admin() {
     queryKey: ["admin", "escrow-bookings"],
     enabled: allowed,
     queryFn: () => customFetch<{ items: any[] }>("/api/admin/bookings"),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: true,
   });
   const escrowBookings = (escrowData as any)?.items ?? [];
   // Trust reports queue
@@ -157,7 +159,7 @@ export default function Admin() {
 
   const handleApproveUser = (id: string) => {
     approveMutation.mutate({ id }, {
-      onSuccess: () => { toast({ title: "User verified ✅" }); refetchUsers(); },
+      onSuccess: () => { toast({ title: "User verified" }); refetchUsers(); },
       onError: () => toast({ variant: "destructive", title: "Failed" }),
     });
   };
@@ -172,7 +174,7 @@ export default function Admin() {
 
   const handleApproveProp = (id: string) => {
     approvePropMutation.mutate({ id }, {
-      onSuccess: () => { toast({ title: "Property published live ✅" }); refetchProps(); },
+      onSuccess: () => { toast({ title: "Property published live" }); refetchProps(); },
       onError: () => toast({ variant: "destructive", title: "Failed" }),
     });
   };
@@ -196,7 +198,7 @@ export default function Admin() {
       },
     }, {
       onSuccess: () => {
-        toast({ title: "Dispute adjudicated ✅" });
+        toast({ title: "Dispute adjudicated" });
         setAdjudicateDispute(null);
         setAdjNotes(""); setAdjDecision("dismissed");
         refetchDisputes();
@@ -224,7 +226,7 @@ export default function Admin() {
       <div className="min-h-screen bg-[#F7F7F7]">
         <NavBar />
         <div className="max-w-xl mx-auto px-4 py-16 text-center">
-          <div className="text-5xl mb-4">🛡️</div>
+          <ShieldAlert className="h-12 w-12 mx-auto mb-3 text-amber-500 opacity-80" />
           <h1 className="text-2xl font-bold mb-2">Admin only</h1>
           <p className="text-muted-foreground mb-6">
             This area is for escrow officers. If you reached this by mistake, head back to your dashboard.
@@ -379,7 +381,7 @@ export default function Admin() {
                           {p.hero_photo_url ? (
                             <img src={p.hero_photo_url} alt="" className="w-full h-full object-cover" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center text-2xl">🏠</div>
+                            <div className="w-full h-full flex items-center justify-center"><Home className="h-7 w-7 text-muted-foreground opacity-50" /></div>
                           )}
                         </div>
                         <div>
@@ -387,7 +389,11 @@ export default function Admin() {
                           <p className="text-xs text-muted-foreground">{p.rooms} room(s) · {formatNGN(p.rent_amount_ngn)}/mo</p>
                           {p.landlord && (
                             <p className="text-xs text-muted-foreground mt-1">
-                              By: {p.landlord.first_name} {p.landlord.last_name} · {p.landlord.verification_status === "verified" ? "✅ Verified" : "⚠️ Unverified"}
+                              By: {p.landlord.first_name} {p.landlord.last_name} · {p.landlord.verification_status === "verified" ? (
+                                <span className="inline-flex items-center gap-1 text-green-700"><CheckCircle className="h-3 w-3" /> Verified</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3 w-3" /> Unverified</span>
+                              )}
                             </p>
                           )}
                           <Link href={`/properties/${p.id}`} className="text-xs text-primary hover:underline">View full listing ↗</Link>
