@@ -36,6 +36,7 @@ function RoleChip({ role, className = "" }: { role: string; className?: string }
 import Logo from "./Logo";
 import NotificationBell from "./NotificationBell";
 import Avatar from "./Avatar";
+import { InstallPWAButton } from "./InstallPWAButton";
 
 interface StoredUser {
   id: string;
@@ -151,6 +152,7 @@ export default function NavBar() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
+          <InstallPWAButton />
           {!user ? (
             <>
               <Link href="/login">
