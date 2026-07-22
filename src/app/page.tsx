@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueries, keepPreviousData } from "@tanstack/react-query";
 import { getGetPropertiesQueryOptions } from "@/api";
 import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
@@ -132,7 +132,7 @@ export default function Home() {
     // already retries 3x; if those still fail we'd rather show stale data
     // than a blank "couldn't load" screen.
     staleTime: 60_000,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   const featured = propertiesData?.data ?? [];

@@ -16,6 +16,7 @@
     "db:clear-photos": "tsx src/lib/db/clear-photos.ts",
     "db:backfill-coords": "tsx src/lib/db/backfill-coords.ts",
     "db:set-password": "tsx src/lib/db/set-password.ts",
+    "db:create-officer": "tsx src/lib/db/create-officer.ts",
     "db:advance-booking": "tsx src/lib/db/advance-booking.ts",
     "trust:backfill": "tsx src/lib/trust/backfill.ts"
   },
