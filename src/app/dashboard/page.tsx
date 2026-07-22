@@ -66,6 +66,15 @@ export default function Dashboard() {
     enabled: !!user,
   });
 
+  // Always declare this hook so the hook order is identical on the initial
+  // render (before localStorage hydrates `user`) and every later render.
+  // `enabled` prevents the request until we know this is a student.
+  const { data: savedData, isLoading: savedLoading } = useQuery({
+    queryKey: ["me", "favorites"],
+    enabled: isStudent,
+    queryFn: () => customFetch<{ data: any[] }>("/api/me/favorites").then((r) => r.data ?? []),
+  });
+
   const publishMutation = usePublishProperty();
   const deleteMutation = useDeleteProperty();
   const updateMutation = useUpdateProperty();
@@ -117,15 +126,6 @@ export default function Dashboard() {
 
   const properties = myProperties?.data ?? [];
   const bookings = (myBookings ?? []) as any[];
-
-  // Saved listings — student-only. Re-fetched via the same query key the
-  // favorites mutation invalidates, so the tab stays in sync with heart
-  // toggles elsewhere in the app.
-  const { data: savedData, isLoading: savedLoading } = useQuery({
-    queryKey: ["me", "favorites"],
-    enabled: isStudent,
-    queryFn: () => customFetch<{ data: any[] }>("/api/me/favorites").then((r) => r.data ?? []),
-  });
   const savedProperties = savedData ?? [];
 
   // For students: active/recent bookings (also flag unpaid bookings so the
