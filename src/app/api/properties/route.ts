@@ -129,23 +129,26 @@ export async function GET(req: NextRequest) {
     const ids = rows.map((r) => r.id);
     const landlordIds = Array.from(new Set(rows.map((r) => r.landlord_id)));
 
-    const [photos, landlords, trust] = await Promise.all([
-      ids.length > 0
-        ? db.select().from(propertyPhotosTable).where(inArray(propertyPhotosTable.property_id, ids)).orderBy(asc(propertyPhotosTable.photo_order))
-        : Promise.resolve([]),
-      landlordIds.length > 0
-        ? db.select({
-            id: usersTable.id,
-            first_name: usersTable.first_name,
-            last_name: usersTable.last_name,
-            role: usersTable.role,
-            verification_status: usersTable.verification_status,
-          }).from(usersTable).where(inArray(usersTable.id, landlordIds))
-        : Promise.resolve([]),
-      landlordIds.length > 0
-        ? db.select().from(trustScoresTable).where(inArray(trustScoresTable.user_id, landlordIds))
-        : Promise.resolve([]),
-    ]);
+    // Serialize the three follow-up queries rather than Promise.all-ing them.
+    // With the Supabase transaction pooler's ~15-slot ceiling, fanning out 4
+    // queries per request saturates the pool under load and every concurrent
+    // request starts failing with EMAXCONNSESSION. Sequential here keeps the
+    // per-request footprint to one slot at a time.
+    const photos = ids.length > 0
+      ? await db.select().from(propertyPhotosTable).where(inArray(propertyPhotosTable.property_id, ids)).orderBy(asc(propertyPhotosTable.photo_order))
+      : [];
+    const landlords = landlordIds.length > 0
+      ? await db.select({
+          id: usersTable.id,
+          first_name: usersTable.first_name,
+          last_name: usersTable.last_name,
+          role: usersTable.role,
+          verification_status: usersTable.verification_status,
+        }).from(usersTable).where(inArray(usersTable.id, landlordIds))
+      : [];
+    const trust = landlordIds.length > 0
+      ? await db.select().from(trustScoresTable).where(inArray(trustScoresTable.user_id, landlordIds))
+      : [];
 
     const landlordMap = new Map(landlords.map((l) => [l.id, l]));
     const trustMap = new Map(trust.map((t) => [t.user_id, t]));

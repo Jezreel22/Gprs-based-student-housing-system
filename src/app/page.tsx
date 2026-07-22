@@ -124,7 +124,16 @@ export default function Home() {
     isLoading,
     error,
     refetch,
-  } = useQuery(getGetPropertiesQueryOptions({ sort: "newest", page_size: 6 }));
+  } = useQuery({
+    ...getGetPropertiesQueryOptions({ sort: "newest", page_size: 6 }),
+    // Keep showing the last successful result while refetching in the
+    // background, and — crucially — keep it on a transient fetch failure so a
+    // flaky connection doesn't wipe the listings off the page. React Query
+    // already retries 3x; if those still fail we'd rather show stale data
+    // than a blank "couldn't load" screen.
+    staleTime: 60_000,
+    keepPreviousData: true,
+  });
 
   const featured = propertiesData?.data ?? [];
 
@@ -268,7 +277,11 @@ export default function Home() {
                 </div>
               ))}
             </div>
-          ) : error ? (
+          ) : error && featured.length === 0 ? (
+            // Only show the hard error state when we have NO cached data to
+            // fall back on. If we've loaded listings before, keep showing them
+            // (below) with a discreet "couldn't refresh" notice — a flaky
+            // connection shouldn't blank the page.
             <div className="text-center py-20 bg-white rounded-2xl border border-[#EBEBEB]">
               <WifiOff className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
               <h3 className="text-lg font-semibold mb-2">Couldn&rsquo;t load listings</h3>
@@ -276,6 +289,19 @@ export default function Home() {
                 Check your internet connection and try again.
               </p>
               <Button variant="outline" onClick={() => refetch()}>Try again</Button>
+            </div>
+          ) : error && featured.length > 0 ? (
+            <div>
+              <div className="mb-4 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <WifiOff className="h-3.5 w-3.5 shrink-0" />
+                Couldn&rsquo;t refresh the latest listings — showing what we loaded earlier.
+                <button onClick={() => refetch()} className="ml-auto underline hover:text-amber-900">Retry</button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-6 gap-y-8">
+                {featured.map(property => (
+                  <PropertyCard key={property.id} property={property} />
+                ))}
+              </div>
             </div>
           ) : featured.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-6 gap-y-8">

@@ -50,28 +50,28 @@ export async function GET(req: NextRequest) {
       );
 
     const landlordIds = Array.from(new Set(rows.map((r) => r.landlord_id)));
-    const [photos, landlords, trust] = await Promise.all([
-      db
-        .select()
-        .from(propertyPhotosTable)
-        .where(inArray(propertyPhotosTable.property_id, ids))
-        .orderBy(propertyPhotosTable.photo_order),
-      landlordIds.length
-        ? db
-            .select({
-              id: usersTable.id,
-              first_name: usersTable.first_name,
-              last_name: usersTable.last_name,
-              role: usersTable.role,
-              verification_status: usersTable.verification_status,
-            })
-            .from(usersTable)
-            .where(inArray(usersTable.id, landlordIds))
-        : Promise.resolve([]),
-      landlordIds.length
-        ? db.select().from(trustScoresTable).where(inArray(trustScoresTable.user_id, landlordIds))
-        : Promise.resolve([]),
-    ]);
+    // Serialize (not Promise.all) so we don't grab 3 pool slots at once on a
+    // pooler that caps at ~15 — same fix as the properties list route.
+    const photos = await db
+      .select()
+      .from(propertyPhotosTable)
+      .where(inArray(propertyPhotosTable.property_id, ids))
+      .orderBy(propertyPhotosTable.photo_order);
+    const landlords = landlordIds.length
+      ? await db
+          .select({
+            id: usersTable.id,
+            first_name: usersTable.first_name,
+            last_name: usersTable.last_name,
+            role: usersTable.role,
+            verification_status: usersTable.verification_status,
+          })
+          .from(usersTable)
+          .where(inArray(usersTable.id, landlordIds))
+      : [];
+    const trust = landlordIds.length
+      ? await db.select().from(trustScoresTable).where(inArray(trustScoresTable.user_id, landlordIds))
+      : [];
 
     const landlordMap = new Map(landlords.map((l) => [l.id, l]));
     const trustMap = new Map(trust.map((t) => [t.user_id, t]));

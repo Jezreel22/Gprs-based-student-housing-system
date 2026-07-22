@@ -11,8 +11,18 @@ if (!process.env.DATABASE_URL) {
 
 const connectionString = process.env.DATABASE_URL ?? "postgres://localhost:5432/_unset";
 
-// `prepare: false` keeps postgres-js compatible with Next.js dev mode
-// where connection state can be hot-reloaded.
+// `prepare: false` keeps postgres-js compatible with Supabase's transaction
+// pooler (port 5432) and Next.js dev hot-reload.
+//
+// IMPORTANT — pool size: Supabase's free-tier transaction pooler caps the
+// number of concurrent session slots (~15). With `max: 10` here plus the
+// dev server and multiple parallel queries per request (the properties
+// route fans out 4 queries at once), we routinely blow past the pooler
+// ceiling and every query starts failing with
+// `(EMAXCONNSESSION) max clients reached in session mode`. Lowering to 3
+// keeps us well under the pooler limit even when several requests land
+// at the same moment, and `prepare:false` lets the transaction pooler
+// multiplex them.
 //
 // Resilience options:
 // - `connect_timeout` caps each TCP connect at 10s. Without it, postgres-js
@@ -31,7 +41,7 @@ const connectionString = process.env.DATABASE_URL ?? "postgres://localhost:5432/
 //   pooler a second chance instead of failing the query outright.
 const client = postgres(connectionString, {
   prepare: false,
-  max: 10,
+  max: 3, // stay under Supabase transaction-pooler session ceiling (~15)
   idle_timeout: 20,
   connect_timeout: 10,
   max_lifetime: 30 * 60, // 30 min — rotate stale sockets before the pooler drops them
