@@ -115,12 +115,36 @@ async function seedPropertyForLandlord() {
   }
 
   const existing = await db
-    .select({ id: propertiesTable.id })
+    .select({ id: propertiesTable.id, status: propertiesTable.listing_status })
     .from(propertiesTable)
     .where(eq(propertiesTable.landlord_id, landlord.id))
     .limit(1);
 
   if (existing.length > 0) {
+    const propertyId = existing[0].id;
+    // Re-attach the bundled WhatsApp photos if the property has none (or
+    // only stale ones). After running `db:clear-photos`, every listing is
+    // empty — so re-seeding needs to repopulate the demo property's gallery
+    // even though the property row itself already exists.
+    const existingPhotos = await db
+      .select({ id: propertyPhotosTable.id })
+      .from(propertyPhotosTable)
+      .where(eq(propertyPhotosTable.property_id, propertyId))
+      .limit(1);
+    if (existingPhotos.length === 0) {
+      await db.insert(propertyPhotosTable).values(
+        PHOTO_URLS.map((photo_url, photo_order) => ({
+          property_id: propertyId,
+          photo_url,
+          photo_order,
+        })),
+      );
+      return {
+        inserted: 0,
+        skipped: 1,
+        reason: "landlord already has a property — re-attached 9 photos",
+      };
+    }
     return { inserted: 0, skipped: 1, reason: "landlord already has a property" };
   }
 

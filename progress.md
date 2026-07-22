@@ -348,3 +348,27 @@ To deploy: copy `DATABASE_URL` / `JWT_SECRET` / `PAYSTACK_SECRET_KEY` /
 `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` from `.env.local` into Vercel → Settings →
 Environment Variables, set `NEXT_PUBLIC_APP_URL` to the Vercel URL, redeploy.
 No `vercel.json` needed — the standalone Next.js project auto-detects.
+
+---
+
+## Demo accounts (seeded by `npm run db:seed`)
+
+All three demo users share the password `passw0rd`:
+
+| Role | Email |
+|---|---|
+| Student | `student@naub.local` |
+| Landlord | `landlord@naub.local` |
+| Escrow Officer (Admin panel) | `admin@naub.local` |
+
+The login page (`/login`) shows a one-click "use these credentials" affordance when `NODE_ENV !== "production"`. The escrow-officer login lands on `/dashboard`; an "Admin" link in the navbar (escrow-officer role only) takes you to `/admin` where the **Escrow** tab lists bookings awaiting manual disbursement.
+
+## Photo & map conventions
+
+- Property photos live in `property_photos`. When none are attached, the UI falls back to `pickListingPhotos(propertyId, 4)` which cycles through 9 bundled WhatsApp JPEGs in `public/listings/`.
+- If a listing has stale photos (old `/placeholder-house.svg` or local-storage uploads via `/api/uploads/*`), run `npm run db:clear-photos` then `npm run db:seed` to reset to the bundled rotation. The seed is idempotent and re-attaches the 9 photos to the demo property.
+- Property detail page now shows a real interactive Google Map (`src/components/maps/PropertyMap.tsx`) instead of the static OSM iframe. Listings without lat/lng show a "Search this address on Google Maps" empty state.
+
+## Production env vars
+
+For the live deployment, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` must be set in the host's environment variables (Vercel/Netlify dashboard → Settings → Environment Variables). In Google Cloud Console, the key's HTTP referrer restriction must include the production domain (`https://<project>.vercel.app/*`).

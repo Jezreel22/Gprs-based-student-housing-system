@@ -14,7 +14,7 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { GraduationCap, Building2, ChevronLeft, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { GraduationCap, Building2, ChevronLeft, ShieldCheck, Shield, Eye, EyeOff } from "lucide-react";
 import Logo from "@/components/Logo";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -25,7 +25,7 @@ const loginSchema = z.object({
 });
 type LoginForm = z.infer<typeof loginSchema>;
 
-type Role = "student" | "landlord";
+type Role = "student" | "landlord" | "escrow_officer";
 
 function saveAuth(token: string, user: object) {
   localStorage.setItem("naub_token", token);
@@ -57,11 +57,15 @@ export default function Login() {
   }
 
   function onSubmit(values: LoginForm) {
+    // Send the selected tab so the server can reject a landlord email on the
+    // Student tab (and vice-versa). Escrow officers aren't a UI tab on the
+    // server side, so we omit `role` for them and let the server accept any
+    // verified officer account.
+    const payload = role === "escrow_officer"
+      ? values
+      : { ...values, role: role ?? "student" };
     loginMutation.mutate(
-      // Send the selected tab so the server can reject a landlord email on the
-      // Student tab (and vice-versa). `role` is guaranteed non-null here — the
-      // form only renders after a tab is picked.
-      { data: { ...values, role: role ?? "student" } },
+      { data: payload },
       {
         onSuccess: (res) => onSuccess(res.token, res.user),
         onError: (err) => {
@@ -136,12 +140,12 @@ export default function Login() {
               <h1 className="text-2xl font-extrabold mb-1">Welcome back</h1>
               <p className="text-muted-foreground text-sm mb-8">Choose how you're logging in</p>
 
-              <div className="grid grid-cols-2 gap-4 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
                 <button onClick={() => setRole("student")}
-                  className="group flex flex-col items-center gap-3 p-6 bg-white rounded-2xl border-2 border-transparent hover:border-primary transition-all hover:shadow-md">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                  className="group flex flex-col items-center gap-3 p-5 bg-white rounded-2xl border-2 border-transparent hover:border-primary transition-all hover:shadow-md">
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
                        style={{ background: "#FFF0F0" }}>
-                    <GraduationCap className="h-7 w-7 text-primary" />
+                    <GraduationCap className="h-6 w-6 text-primary" />
                   </div>
                   <div className="text-center">
                     <p className="font-bold text-sm">Student</p>
@@ -150,17 +154,59 @@ export default function Login() {
                 </button>
 
                 <button onClick={() => setRole("landlord")}
-                  className="group flex flex-col items-center gap-3 p-6 bg-white rounded-2xl border-2 border-transparent hover:border-primary transition-all hover:shadow-md">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                  className="group flex flex-col items-center gap-3 p-5 bg-white rounded-2xl border-2 border-transparent hover:border-primary transition-all hover:shadow-md">
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
                        style={{ background: "#FFF0F0" }}>
-                    <Building2 className="h-7 w-7 text-primary" />
+                    <Building2 className="h-6 w-6 text-primary" />
                   </div>
                   <div className="text-center">
                     <p className="font-bold text-sm">Landlord</p>
                     <p className="text-xs text-muted-foreground mt-0.5">List properties</p>
                   </div>
                 </button>
+
+                <button onClick={() => setRole("escrow_officer")}
+                  className="group flex flex-col items-center gap-3 p-5 bg-white rounded-2xl border-2 border-transparent hover:border-primary transition-all hover:shadow-md">
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                       style={{ background: "#FEF3C7" }}>
+                    <Shield className="h-6 w-6 text-amber-700" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-sm">Escrow Officer</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Release payouts</p>
+                  </div>
+                </button>
               </div>
+
+              {/* One-click demo credentials so reviewers/stakeholders don't have to hunt for them.
+                  Hidden when NODE_ENV is "production" on real hosting so end users don't see them. */}
+              {process.env.NODE_ENV !== "production" && (
+                <div className="rounded-xl border border-dashed border-[#EBEBEB] bg-[#FAFAFA] p-4 mb-6">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Demo accounts (development)
+                  </p>
+                  <div className="grid gap-2 text-xs">
+                    {[
+                      { role: "Student", email: "student@naub.local" },
+                      { role: "Landlord", email: "landlord@naub.local" },
+                      { role: "Escrow Officer", email: "admin@naub.local" },
+                    ].map((acc) => (
+                      <button key={acc.email}
+                        type="button"
+                        onClick={() => {
+                          form.setValue("email", acc.email);
+                          form.setValue("password", "passw0rd");
+                          setRole(acc.role === "Escrow Officer" ? "escrow_officer" : acc.role === "Student" ? "student" : "landlord");
+                        }}
+                        className="flex items-center justify-between gap-3 rounded-lg bg-white border border-[#EBEBEB] hover:border-primary px-3 py-2 text-left transition-colors">
+                        <span className="font-semibold">{acc.role}</span>
+                        <span className="font-mono text-muted-foreground">{acc.email}</span>
+                      </button>
+                    ))}
+                    <p className="text-[11px] text-muted-foreground mt-1">Password for all: <span className="font-mono">passw0rd</span></p>
+                  </div>
+                </div>
+              )}
 
               <p className="text-center text-sm text-muted-foreground">
                 Don't have an account?{" "}
@@ -177,17 +223,23 @@ export default function Login() {
 
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                     style={{ background: "#FFF0F0" }}>
+                     style={{ background: role === "escrow_officer" ? "#FEF3C7" : "#FFF0F0" }}>
                   {role === "student"
                     ? <GraduationCap className="h-5 w-5 text-primary" />
-                    : <Building2 className="h-5 w-5 text-primary" />}
+                    : role === "escrow_officer"
+                      ? <Shield className="h-5 w-5 text-amber-700" />
+                      : <Building2 className="h-5 w-5 text-primary" />}
                 </div>
                 <div>
                   <h1 className="text-xl font-extrabold leading-tight">
-                    {role === "student" ? "Student" : "Landlord / Agent"} Login
+                    {role === "student" ? "Student" : role === "escrow_officer" ? "Escrow Officer Login" : "Landlord / Agent"} Login
                   </h1>
                   <p className="text-xs text-muted-foreground">
-                    {role === "student" ? "Access your housing dashboard" : "Manage your property listings"}
+                    {role === "student"
+                      ? "Access your housing dashboard"
+                      : role === "escrow_officer"
+                        ? "Review and release escrow payouts"
+                        : "Manage your property listings"}
                   </p>
                 </div>
               </div>
@@ -219,6 +271,17 @@ export default function Login() {
                 <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2.5 text-sm text-amber-800">
                   <ShieldCheck className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
                   <span>Landlords must complete identity & property verification after signing in.</span>
+                </div>
+              )}
+
+              {/* Escrow officer notice */}
+              {role === "escrow_officer" && (
+                <div className="mb-5 bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2.5 text-sm text-amber-800">
+                  <Shield className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    Escrow officers review bookings and release payouts to landlords from the
+                    Admin panel.
+                  </span>
                 </div>
               )}
 

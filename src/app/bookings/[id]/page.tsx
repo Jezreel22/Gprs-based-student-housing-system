@@ -632,7 +632,7 @@ function BookingPage() {
                 <span>
                   {b.payout_transfer_reference
                     ? "Transfer initiated — funds will appear in the landlord's account shortly."
-                    : "Our team will send the payout to the landlord's bank account within 24 hours."}
+                    : "An escrow officer will review and release this payout from the Admin panel. Funds typically reach the landlord's bank account within 24 hours."}
                 </span>
               </div>
             )}

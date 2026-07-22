@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { pickListingPhotos } from "@/lib/listing-photos";
+import PropertyMap from "@/components/maps/PropertyMap";
 import {
   Bed, MapPin, Wifi, Zap, Droplets, Shield, Car, ChefHat,
   Star, ShieldCheck, ShieldAlert, MessageSquare, ChevronLeft, ChevronRight,
@@ -371,49 +372,46 @@ export default function PropertyDetail() {
               </div>
 
               {property.latitude && property.longitude ? (
-                <div className="rounded-xl overflow-hidden border border-[#EBEBEB]" style={{ height: 280 }}>
-                  <iframe
-                    title="Property location"
-                    width="100%"
-                    height="100%"
-                    frameBorder="0"
-                    loading="lazy"
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${property.longitude - 0.01}%2C${property.latitude - 0.01}%2C${property.longitude + 0.01}%2C${property.latitude + 0.01}&layer=mapnik&marker=${property.latitude}%2C${property.longitude}`}
-                  />
-                </div>
+                <PropertyMap
+                  lat={property.latitude}
+                  lng={property.longitude}
+                  verified={property.landlord?.verification_status === "verified"}
+                  rentAmountNgn={property.rent_amount_ngn}
+                  height={320}
+                />
               ) : (
-                <div className="rounded-xl overflow-hidden border border-[#EBEBEB] bg-[#F7F7F7] flex flex-col items-center justify-center gap-3"
-                     style={{ height: 200 }}>
+                <div className="rounded-xl overflow-hidden border border-[#EBEBEB] bg-[#F7F7F7] flex flex-col items-center justify-center gap-3 p-6 text-center"
+                     style={{ minHeight: 200 }}>
                   <div className="w-12 h-12 rounded-2xl bg-white border border-[#EBEBEB] flex items-center justify-center">
                     <MapPin className="h-6 w-6 text-muted-foreground" />
                   </div>
-                  <p className="text-sm text-muted-foreground">Exact coordinates not available</p>
-                  <a href={`https://maps.google.com/?q=${encodeURIComponent(property.address ?? "")}`}
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Exact location not pinned yet</p>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                      This landlord hasn&rsquo;t dropped a pin on the map, so we can&rsquo;t show the exact location.
+                      Use the address search below to see where it might be.
+                    </p>
+                  </div>
+                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(property.address ?? "")}`}
                      target="_blank" rel="noopener noreferrer"
                      className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                    <ExternalLink className="h-3.5 w-3.5" /> View on Google Maps
+                    <ExternalLink className="h-3.5 w-3.5" /> Search this address on Google Maps
                   </a>
                 </div>
               )}
 
-              {/* Find nearby properties on the interactive map */}
-              <div className="mt-4 flex gap-3 flex-wrap">
-                <Link
-                  href={`/map${property.latitude && property.longitude ? `?lat=${property.latitude}&lng=${property.longitude}` : ""}`}
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
-                >
-                  <MapPin className="h-4 w-4" />
-                  Find nearby properties on map
-                </Link>
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${property.latitude},${property.longitude}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" /> Open in Google Maps
-                </a>
-              </div>
+              {/* Find nearby properties on the interactive map (only meaningful when we have coords) */}
+              {property.latitude && property.longitude && (
+                <div className="mt-4 flex gap-3 flex-wrap">
+                  <Link
+                    href={`/map?lat=${property.latitude}&lng=${property.longitude}`}
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    Find nearby properties on map
+                  </Link>
+                </div>
+              )}
             </div>
 
             {/* Reviews — property + landlord reviews, newest first. Each card
