@@ -12,6 +12,7 @@ import {
 import { initializePayment, verifyPayment } from "@/lib/payment-client";
 import { payWithPaystack, PAYSTACK_CLOSED } from "@/lib/paystack-inline";
 import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
+import { useCancelBooking } from "@/hooks/use-cancel-booking";
 import NavBar from "@/components/NavBar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2, MessageSquare, Banknote, Home, Receipt } from "lucide-react";
+import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2, MessageSquare, Banknote, Home, Receipt, Ban } from "lucide-react";
 
 function formatNGN(n?: number | null) {
   return n ? `₦${n.toLocaleString("en-NG")}` : "₦—";
@@ -138,6 +139,21 @@ function BookingPage() {
   const [showRating, setShowRating] = useState(false);
   const [propertyRating, setPropertyRating] = useState(0);
   const [approvingRelease, setApprovingRelease] = useState(false);
+  const [cancellingBooking, setCancellingBooking] = useState(false);
+  const cancelBookingMutation = useCancelBooking({
+    onSuccess: () => { toast({ title: "Booking cancelled" }); refetchBooking(); },
+    onError: (m) => toast({ variant: "destructive", title: "Cancel failed", description: m }),
+  });
+  const handleCancelBooking = () => {
+    if (typeof window !== "undefined" &&
+        !window.confirm("Cancel this booking? This can't be undone.")) return;
+    if (!bookingId) return;
+    setCancellingBooking(true);
+    cancelBookingMutation.mutate(
+      { id: bookingId, body: { reason: "student cancelled from booking detail" } },
+      { onSettled: () => setCancellingBooking(false) },
+    );
+  };
 
   useEffect(() => {
     // Wait for the localStorage read to complete before deciding to redirect.
@@ -661,6 +677,14 @@ function BookingPage() {
               <CreditCard className="h-4 w-4" />
               {paymentInProgress ? "Opening Paystack…" : `Pay ${formatNGN(b.total_amount_ngn)} now`}
             </Button>
+            <button
+              className="mt-3 w-full text-sm text-muted-foreground hover:text-destructive transition-colors flex items-center justify-center gap-1.5"
+              onClick={handleCancelBooking}
+              disabled={cancellingBooking}
+            >
+              <Ban className="h-3.5 w-3.5" />
+              {cancellingBooking ? "Cancelling…" : "Cancel this booking"}
+            </button>
           </div>
         )}
 

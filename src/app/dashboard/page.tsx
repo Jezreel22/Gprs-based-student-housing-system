@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { getGetMyPropertiesQueryOptions, getGetBookingsQueryOptions, usePublishProperty, useDeleteProperty, useUpdateProperty } from "@/api";
+import { customFetch } from "@/api/custom-fetch";
 import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
 import PayoutDetailsCard from "@/components/PayoutDetailsCard";
@@ -15,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Home, Plus, ShieldCheck, ShieldAlert, Calendar, Clock,
-  AlertCircle, Lock, ArrowRight, MessageSquare, CreditCard, ClipboardList, Search
+  AlertCircle, Lock, ArrowRight, MessageSquare, CreditCard, ClipboardList, Search, Heart
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -116,6 +117,16 @@ export default function Dashboard() {
 
   const properties = myProperties?.data ?? [];
   const bookings = (myBookings ?? []) as any[];
+
+  // Saved listings — student-only. Re-fetched via the same query key the
+  // favorites mutation invalidates, so the tab stays in sync with heart
+  // toggles elsewhere in the app.
+  const { data: savedData, isLoading: savedLoading } = useQuery({
+    queryKey: ["me", "favorites"],
+    enabled: isStudent,
+    queryFn: () => customFetch<{ data: any[] }>("/api/me/favorites").then((r) => r.data ?? []),
+  });
+  const savedProperties = savedData ?? [];
 
   // For students: active/recent bookings (also flag unpaid bookings so the
   // dashboard can prompt the student to complete payment).
@@ -364,6 +375,7 @@ export default function Dashboard() {
           <Tabs defaultValue="bookings" className="space-y-6">
             <TabsList className="bg-white border border-[#EBEBEB] h-auto p-1 rounded-xl">
               <TabsTrigger value="bookings" className="rounded-lg px-5">My Bookings ({bookings.length})</TabsTrigger>
+              <TabsTrigger value="saved" className="rounded-lg px-5">Saved</TabsTrigger>
               <TabsTrigger value="browse" className="rounded-lg px-5">Find Housing</TabsTrigger>
             </TabsList>
 
@@ -419,6 +431,41 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="saved">
+              {savedLoading ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="bg-white rounded-2xl overflow-hidden border border-[#EBEBEB] animate-pulse">
+                      <div className="aspect-[4/3] bg-gray-200" />
+                      <div className="p-4 space-y-2">
+                        <div className="h-4 bg-gray-200 rounded w-3/4" />
+                        <div className="h-3 bg-gray-200 rounded w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : savedProperties.length === 0 ? (
+                <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
+                  <Heart className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-60" />
+                  <h3 className="text-lg font-semibold mb-2">No saved listings yet</h3>
+                  <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+                    Tap the heart on any listing to save it here for later. Saved listings stay in sync with your heart taps on the browse page.
+                  </p>
+                  <Link href="/properties">
+                    <Button style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>
+                      Browse listings
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {savedProperties.map((p: any) => (
+                    <PropertyCard key={p.id} property={p} />
+                  ))}
                 </div>
               )}
             </TabsContent>

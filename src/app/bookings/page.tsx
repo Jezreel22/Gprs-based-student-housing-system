@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft, ArrowRight, CreditCard, MessageSquare, Lock,
-  ShoppingBag, CheckCircle, XCircle, Clock, Receipt
+  ShoppingBag, CheckCircle, XCircle, Clock, Receipt, Ban
 } from "lucide-react";
 import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
+import { useCancelBooking } from "@/hooks/use-cancel-booking";
+import { useToast } from "@/hooks/use-toast";
 
 interface StoredUser {
   id: string;
@@ -51,6 +53,23 @@ function statusGroup(status: string): "active" | "completed" | "cancelled" {
 function BookingRow({ b, user }: { b: any; user: StoredUser }) {
   const status = BOOKING_STATUS_MAP[b.booking_status] ?? { label: b.booking_status, color: "#717171" };
   const isStudent = user.role === "student";
+  const { toast } = useToast();
+  // Cancel is only valid for pending_payment (unpaid) bookings — the server
+  // enforces this. Already-paid bookings need a dispute / refund path through
+  // escrow and shouldn't be cancellable from this client.
+  const canCancel = isStudent && b.booking_status === "pending_payment";
+  const cancelMutation = useCancelBooking({
+    onSuccess: (message) => toast({ title: "Booking cancelled", description: message }),
+    onError: (message) => toast({ variant: "destructive", title: "Cancel failed", description: message }),
+  });
+  const handleCancel = () => {
+    if (typeof window !== "undefined" &&
+        !window.confirm("Cancel this booking? This can't be undone.")) return;
+    cancelMutation.mutate({
+      id: b.id,
+      body: { reason: "student cancelled from /bookings" },
+    });
+  };
   // Who the "other party" is depends on the viewer's role.
   const otherParty = isStudent ? b.landlord : b.student;
   const otherPartyLabel = isStudent ? "Landlord" : "Student";
@@ -111,6 +130,19 @@ function BookingRow({ b, user }: { b: any; user: StoredUser }) {
               <MessageSquare className="h-3.5 w-3.5" /> Message
             </Button>
           </Link>
+        )}
+        {canCancel && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+            onClick={handleCancel}
+            disabled={cancelMutation.isPending}
+            title="Cancel this unpaid booking"
+          >
+            <Ban className="h-3.5 w-3.5" />
+            {cancelMutation.isPending ? "Cancelling…" : "Cancel"}
+          </Button>
         )}
         <Link href={`/bookings/${b.id}`} className="flex-1 sm:flex-none">
           <Button size="sm" variant="outline" className="w-full gap-1 text-xs">

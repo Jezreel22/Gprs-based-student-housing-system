@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, uuid, jsonb, real, date, check, customType, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, uuid, jsonb, real, date, check, customType, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // Drizzle 0.45 has no first-class `bytea` column, so we declare one. The
@@ -104,6 +104,24 @@ export const propertyPhotosTable = pgTable("property_photos", {
 
   uploaded_at: timestamp("uploaded_at").defaultNow(),
 });
+
+// Property favorites — a student's "saved" listings. Composite unique on
+// (user_id, property_id) prevents double-favoriting. Cascade-delete so
+// removing a user or property also drops their favorites (no orphans).
+export const propertyFavoritesTable = pgTable(
+  "property_favorites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    user_id: uuid("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+    property_id: uuid("property_id").notNull().references(() => propertiesTable.id, { onDelete: "cascade" }),
+    created_at: timestamp("created_at").defaultNow(),
+  },
+  (t) => ({
+    uniqUserProperty: uniqueIndex("uniq_user_property_favorite").on(t.user_id, t.property_id),
+    byUser: index("idx_property_favorites_user").on(t.user_id),
+    byProperty: index("idx_property_favorites_property").on(t.property_id),
+  }),
+);
 
 // ─── uploads ───────────────────────────────────────────────────────────────
 // Binary blobs for files posted to /api/upload (currently property photos).
@@ -382,6 +400,8 @@ export type Property = typeof propertiesTable.$inferSelect;
 export type NewProperty = typeof propertiesTable.$inferInsert;
 export type PropertyPhoto = typeof propertyPhotosTable.$inferSelect;
 export type NewPropertyPhoto = typeof propertyPhotosTable.$inferInsert;
+export type PropertyFavorite = typeof propertyFavoritesTable.$inferSelect;
+export type NewPropertyFavorite = typeof propertyFavoritesTable.$inferInsert;
 export type Upload = typeof uploadsTable.$inferSelect;
 export type NewUpload = typeof uploadsTable.$inferInsert;
 export type Booking = typeof bookingsTable.$inferSelect;
@@ -411,6 +431,7 @@ export const schema = {
   usersTable,
   propertiesTable,
   propertyPhotosTable,
+  propertyFavoritesTable,
   uploadsTable,
   bookingsTable,
   disputesTable,

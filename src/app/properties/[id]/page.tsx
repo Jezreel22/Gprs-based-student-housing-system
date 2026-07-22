@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getGetPropertyQueryOptions, getGetBookingsQueryOptions, useCreatePropertyRating } from "@/api";
@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { pickListingPhotos } from "@/lib/listing-photos";
 import PropertyMap from "@/components/maps/PropertyMap";
+import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
+import { Heart } from "lucide-react";
 import {
   Bed, MapPin, Wifi, Zap, Droplets, Shield, Car, ChefHat,
   Star, ShieldCheck, ShieldAlert, MessageSquare, ChevronLeft, ChevronRight,
@@ -65,6 +67,7 @@ function StatusBadge({ status }: { status?: string | null }) {
 
 export default function PropertyDetail() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [photoIdx, setPhotoIdx] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -96,6 +99,20 @@ export default function PropertyDetail() {
   ) as ({ id: string } & Record<string, unknown>) | undefined;
   const isStudent = user?.role === "student";
   const canRateProperty = hydrated && isStudent && !!completedBookingForProperty;
+
+  // Favorites (heart in the gallery overlay). Anonymous users can't favorite —
+  // the hook is disabled and the button redirects to /login.
+  const signedIn = hydrated && !!user;
+  const { data: favoriteIds = [] } = useMyFavoriteIds(signedIn);
+  const toggleFavoriteMutation = useToggleFavorite();
+  const isFavorite = favoriteIds.includes(params.id);
+  const handleToggleFavorite = () => {
+    if (!signedIn) {
+      router.push(`/login?redirect=${encodeURIComponent(`/properties/${params.id}`)}`);
+      return;
+    }
+    toggleFavoriteMutation.mutate({ propertyId: params.id, favorite: !isFavorite });
+  };
 
   // Property ratings live alongside landlord ratings on the detail response.
   const propertyRatings: any[] = property?.property_ratings ?? [];
@@ -220,10 +237,23 @@ export default function PropertyDetail() {
               <StatusBadge status={property.listing_status} />
             </div>
 
-            {/* Photo counter */}
-            <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-black/50 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm">
-              <Images className="h-3.5 w-3.5" />
-              {photoIdx + 1} / {photos.length}
+            {/* Top-right: heart + photo counter */}
+            <div className="absolute top-4 right-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleToggleFavorite}
+                aria-label={isFavorite ? "Remove from saved" : "Save listing"}
+                aria-pressed={isFavorite}
+                className="h-9 w-9 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-sm hover:scale-110 active:scale-95 transition-transform"
+              >
+                <Heart
+                  className={`h-4 w-4 transition-colors ${isFavorite ? "fill-[#FF5A5F] text-[#FF5A5F]" : "text-foreground"}`}
+                />
+              </button>
+              <span className="flex items-center gap-1.5 bg-black/50 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm">
+                <Images className="h-3.5 w-3.5" />
+                {photoIdx + 1} / {photos.length}
+              </span>
             </div>
 
             {/* Nav arrows */}

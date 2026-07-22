@@ -8,6 +8,13 @@
       "when": 1783335417446,
       "tag": "0000_add_uploads_table",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784683938390,
+      "tag": "0001_lush_tomas",
+      "breakpoints": true
     }
   ]
 }
