@@ -2,9 +2,10 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { and, eq, inArray, sql, gte, lte, ilike, desc, asc, SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { propertiesTable, usersTable, propertyPhotosTable, trustScoresTable, ratingsTable } from "@/lib/db/schema";
+import { propertiesTable, usersTable, trustScoresTable, ratingsTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, parseBody, jsonResponse, getQueryParams, errorResponse } from "@/lib/api";
+import { logFromRequest } from "@/lib/log";
 import { formatTrustScore } from "@/lib/format";
 import { TRUST_BASELINE } from "@/lib/trust/levels";
 import type { PropertyListResponse, PropertySummary } from "@/api/generated/api.schemas";
@@ -27,12 +28,39 @@ const GetPropertiesQuery = z.object({
   page_size: z.coerce.number().int().positive().max(50).optional(),
 });
 
+export const runtime = "nodejs";
+// Keep database-backed listings close to the Supabase project in Frankfurt
+// (`aws-0-eu-central-1.pooler.supabase.com`) instead of allowing Vercel to run
+// the cold function in a distant region.
+export const preferredRegion = "fra1";
+// Gives a cold DB connection room to complete instead of Vercel returning a
+// generic function timeout before the route can log the actual cause.
+export const maxDuration = 30;
+
 export async function GET(req: NextRequest) {
+  const logger = logFromRequest(req);
+  const startedAt = Date.now();
+
   try {
     // GET is intentionally public so anonymous visitors can browse live
     // listings, search, and use filters. Write paths (POST) and authenticated
     // endpoints still call requireAuth.
     const q = GetPropertiesQuery.parse(Object.fromEntries(getQueryParams(req)));
+
+    // Structured log so we can see in Vercel which query path was taken,
+    // which sort/filter combo, and the resulting page size. This is what makes
+    // a future "listings disappeared" debuggable instead of a silent 504.
+    logger.info("api.properties.GET", {
+      sort: q.sort ?? "newest",
+      page: q.page ?? 1,
+      page_size: q.page_size ?? 12,
+      q: q.q ?? null,
+      rent_min: q.rent_min ?? null,
+      rent_max: q.rent_max ?? null,
+      rooms: q.rooms ?? null,
+      trust_score_min: q.trust_score_min ?? null,
+      landlord_type: q.landlord_type ?? null,
+    });
 
     const filters: SQL[] = [eq(propertiesTable.listing_status, "live")];
 
@@ -95,74 +123,99 @@ export async function GET(req: NextRequest) {
     // we keep the original simple query for clarity and performance.
     const baseWhere = filters.length > 1 ? and(...filters) : filters[0]!;
 
-    let rows: typeof propertiesTable.$inferSelect[];
-    let totalRows: { count: number }[];
-
-    if (q.sort === "most_trusted") {
-      const totalQuery = db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(propertiesTable)
-        .leftJoin(trustScoresTable, eq(trustScoresTable.user_id, propertiesTable.landlord_id))
-        .where(baseWhere);
-      const pageQuery = db
-        .select({ prop: propertiesTable, trust: trustScoresTable })
-        .from(propertiesTable)
-        .leftJoin(trustScoresTable, eq(trustScoresTable.user_id, propertiesTable.landlord_id))
-        .where(baseWhere)
-        .orderBy(orderBy)
-        .limit(pageSize)
-        .offset(offset);
-      const [pageRows, totalResult] = await Promise.all([pageQuery, totalQuery]);
-      rows = pageRows.map((r) => r.prop);
-      totalRows = totalResult;
-    } else {
-      const pageQuery = db.select().from(propertiesTable).where(baseWhere).orderBy(orderBy).limit(pageSize).offset(offset);
-      const totalQuery = db.select({ count: sql<number>`count(*)::int` }).from(propertiesTable).where(baseWhere);
-      const [pageRows, totalResult] = await Promise.all([pageQuery, totalQuery]);
-      rows = pageRows;
-      totalRows = totalResult;
-    }
-
-    const total = totalRows[0]?.count ?? 0;
-
-    // Fetch hero photo + landlord summary for each row in one shot
-    const ids = rows.map((r) => r.id);
-    const landlordIds = Array.from(new Set(rows.map((r) => r.landlord_id)));
-
-    // Serialize the three follow-up queries rather than Promise.all-ing them.
-    // With the Supabase transaction pooler's ~15-slot ceiling, fanning out 4
-    // queries per request saturates the pool under load and every concurrent
-    // request starts failing with EMAXCONNSESSION. Sequential here keeps the
-    // per-request footprint to one slot at a time.
-    const photos = ids.length > 0
-      ? await db.select().from(propertyPhotosTable).where(inArray(propertyPhotosTable.property_id, ids)).orderBy(asc(propertyPhotosTable.photo_order))
-      : [];
-    const landlords = landlordIds.length > 0
-      ? await db.select({
+    // ── Round-trip consolidation ─────────────────────────────────────────────
+    //
+    // This endpoint used to issue 5+ sequential queries against Supabase's
+    // transaction pooler: main page + COUNT + photos + landlords + trust.
+    // On a cold Vercel serverless invocation the per-round-trip overhead
+    // added up to ~17s, exceeding the 10s function timeout and producing a
+    // 504 that the UI surfaces as "Couldn't load listings." Warm requests
+    // (~3.5s) survived because they avoided the cold-start connect cost,
+    // which is why the bug only showed up in production.
+    //
+    // We now fetch the property page + landlord summary + trust row in one
+    // leftJoin-ed query (the same shape `most_trusted` already used), then
+    // fetch only the hero photos in one bounded query. That cuts the normal
+    // path from 5 sequential database operations to 3 total operations
+    // (page + count run concurrently, then the photo lookup), while keeping
+    // the response shape exactly the same.
+    //
+    // Trust ordering is unchanged: when `sort === "most_trusted"` the
+    // join also drives the ORDER BY; for other sorts we still leftJoin but
+    // ignore trust in the ORDER BY. Either way we return the trust data so
+    // the card can render the score.
+    const pageQuery = db
+      .select({
+        prop: propertiesTable,
+        landlord: {
           id: usersTable.id,
           first_name: usersTable.first_name,
           last_name: usersTable.last_name,
           role: usersTable.role,
           verification_status: usersTable.verification_status,
-        }).from(usersTable).where(inArray(usersTable.id, landlordIds))
-      : [];
-    const trust = landlordIds.length > 0
-      ? await db.select().from(trustScoresTable).where(inArray(trustScoresTable.user_id, landlordIds))
+        },
+        trust: trustScoresTable,
+      })
+      .from(propertiesTable)
+      .leftJoin(usersTable, eq(usersTable.id, propertiesTable.landlord_id))
+      .leftJoin(trustScoresTable, eq(trustScoresTable.user_id, propertiesTable.landlord_id))
+      .where(baseWhere)
+      .orderBy(orderBy)
+      .limit(pageSize)
+      .offset(offset);
+
+    const totalQuery = db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(propertiesTable)
+      .where(baseWhere);
+
+    const [pageRows, totalResult] = await Promise.all([pageQuery, totalQuery]);
+    const rows = pageRows.map((r) => r.prop);
+    const totalRows = totalResult;
+
+    const total = totalRows[0]?.count ?? 0;
+
+    // Hero photo per property — single correlated subquery so we don't issue
+    // another round-trip and don't join the whole photos table. Returns the
+    // lowest-photo_order row for each property (hero), or NULL when the
+    // listing has no photos uploaded.
+    //
+    // Built with raw SQL for the subquery body (rather than the property_photos
+    // table builder) so Drizzle doesn't try to validate the photos columns
+    // against the OUTER query's FROM list — which would reject the subquery
+    // with "table property_photos is not part of the query".
+    const ids = rows.map((r) => r.id);
+    const photos = ids.length > 0
+      ? await db.execute<{
+          property_id: string;
+          photo_url: string | null;
+        }>(sql`
+          SELECT ${propertiesTable.id} AS property_id, (
+            SELECT photo_url
+            FROM property_photos
+            WHERE property_id = ${propertiesTable.id}
+            ORDER BY photo_order ASC
+            LIMIT 1
+          ) AS photo_url
+          FROM properties
+          WHERE ${inArray(propertiesTable.id, ids)}
+        `)
       : [];
 
-    const landlordMap = new Map(landlords.map((l) => [l.id, l]));
-    const trustMap = new Map(trust.map((t) => [t.user_id, t]));
-    const photoByProp = new Map<string, typeof photos>();
-    for (const p of photos) {
-      const list = photoByProp.get(p.property_id) ?? [];
-      list.push(p);
-      photoByProp.set(p.property_id, list);
-    }
+    const photoByProp = new Map<string, string | null>(
+      photos.map((p) => [p.property_id, p.photo_url]),
+    );
 
-    const data: PropertySummary[] = rows.map((p) => {
-      const l = landlordMap.get(p.landlord_id);
-      const ts = trustMap.get(p.landlord_id);
-      const hero = (photoByProp.get(p.id) ?? [])[0];
+    const data: PropertySummary[] = pageRows.map((row) => {
+      const p = row.prop;
+      const l = row.landlord;
+      const ts = row.trust;
+      const hero = photoByProp.get(p.id) ?? null;
+      // Drizzle's leftJoin keeps the joined object present with null columns
+      // when there's no match. Treat that as "no landlord" so the response
+      // shape matches the previous behaviour (`landlord: undefined` instead of
+      // `landlord: { id: null, ... }`).
+      const hasLandlord = l && l.id != null;
       return {
         id: p.id,
         address: p.address,
@@ -170,10 +223,10 @@ export async function GET(req: NextRequest) {
         deposit_amount_ngn: p.deposit_amount_ngn,
         rooms: p.rooms ?? 1,
         listing_status: p.listing_status ?? "draft",
-        hero_photo_url: hero?.photo_url ?? null,
+        hero_photo_url: hero,
         amenities: p.amenities ?? {},
         created_at: p.created_at?.toISOString() ?? null,
-        landlord: l ? {
+        landlord: hasLandlord ? {
           id: l.id,
           first_name: l.first_name,
           last_name: l.last_name,
@@ -186,8 +239,20 @@ export async function GET(req: NextRequest) {
     });
 
     const response: PropertyListResponse = { data, total, page, page_size: pageSize };
+    logger.info("api.properties.GET completed", {
+      duration_ms: Date.now() - startedAt,
+      total,
+      returned: data.length,
+    });
     return jsonResponse(response);
   } catch (err) {
+    const e = err as Error & { code?: string; cause?: unknown };
+    logger.error("api.properties.GET failed", {
+      duration_ms: Date.now() - startedAt,
+      message: e?.message ?? String(err),
+      code: e?.code,
+      cause: e?.cause instanceof Error ? e.cause.message : e?.cause,
+    });
     return handleError(err, req);
   }
 }
