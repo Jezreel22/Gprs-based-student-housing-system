@@ -12,10 +12,11 @@ import type { AuthResponse } from "@/api/generated/api.schemas";
 const LoginBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  // The login screen picks a tab (Student / Landlord) before entering
-  // credentials. We enforce it here so a landlord email can't sign in through
-  // the Student tab (or vice-versa) — the role picker must match the account.
-  role: z.enum(["student", "landlord"]).optional(),
+  // The login screen picks a tab (Student / Landlord / Escrow Officer) before
+  // entering credentials. We enforce it here so a landlord email can't sign
+  // in through the Student tab (or vice-versa) — the role picker must match
+  // the account. Escrow officers are accepted as their own tab.
+  role: z.enum(["student", "landlord", "escrow_officer"]).optional(),
 });
 
 // Human-readable role labels for error messages.
@@ -31,8 +32,9 @@ function roleLabel(role: string): string {
 
 // Which stored roles are allowed for a given login tab. The "landlord" tab
 // also accepts agents — they list properties and set payouts the same way.
-function roleMatches(loginRole: "student" | "landlord", actualRole: string): boolean {
-  if (loginRole === "student") return actualRole === "student";
+function roleMatches(loginRole: "student" | "landlord" | "escrow_officer", actualRole: string): boolean {
+  if (loginRole === "student")        return actualRole === "student";
+  if (loginRole === "escrow_officer") return actualRole === "escrow_officer";
   return actualRole === "landlord" || actualRole === "agent";
 }
 
@@ -58,7 +60,10 @@ export async function POST(req: NextRequest) {
     // AFTER the password so a wrong-tab attempt never leaks whether the email
     // exists (same "Invalid credentials"-style 401 surface).
     if (body.role && !roleMatches(body.role, user.role)) {
-      const wantedTab = body.role === "student" ? "Student" : "Landlord";
+      const wantedTab =
+        body.role === "student" ? "Student" :
+        body.role === "escrow_officer" ? "Escrow Officer" :
+        "Landlord";
       return jsonResponse({
         error: `This email is registered as ${roleLabel(user.role)} account, not ${roleLabel(body.role)} account. Use the ${wantedTab} tab to sign in.`,
       }, { status: 403 });
