@@ -18,6 +18,10 @@ node_modules
 
 # runtime artifacts
 public/uploads/*
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/swe-worker-*.js
 
 # IDEs and editors
 /.idea

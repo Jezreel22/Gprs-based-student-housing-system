@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
+import { spawnSync } from "node:child_process";
+import withSerwistInit from "@serwist/next";
 
-let nextConfig: NextConfig = {
+const nextConfig: NextConfig = {
 
 
 
@@ -47,3 +49,28 @@ let nextConfig: NextConfig = {
   // },
 };
 
+// A revision lets Serwist version the precached offline page so it is re-fetched
+// when a new commit is deployed (never serves a stale precached shell). Git is
+// available on Vercel's build; fall back to a constant if it isn't.
+let precacheRevision = "v1";
+try {
+  const out = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+  if (out.status === 0 && out.stdout) precacheRevision = out.stdout.trim().slice(0, 7);
+} catch {
+  // git not available — keep the fallback revision.
+}
+
+// Wrap the config with Serwist. The service worker source (src/app/sw.ts) is
+// compiled to public/sw.js during `next build`. Disabled in development so local
+// dev is unaffected by worker caching. `reloadOnOnline: false` avoids wiping
+// unsaved form input when connectivity returns.
+const withSerwist = withSerwistInit({
+  swSrc: "src/app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV === "development",
+  reloadOnOnline: false,
+  cacheOnNavigation: true,
+  additionalPrecacheEntries: [{ url: "/offline", revision: precacheRevision }],
+});
+
+export default withSerwist(nextConfig);

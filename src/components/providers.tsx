@@ -6,6 +6,7 @@ import { GoogleOAuthProvider } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { setAuthTokenGetter } from "@/api";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
@@ -37,6 +38,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <TooltipProvider>
           {children}
           <Toaster />
+          <ServiceWorkerRegister />
         </TooltipProvider>
       </QueryClientProvider>
     </GoogleOAuthProvider>
