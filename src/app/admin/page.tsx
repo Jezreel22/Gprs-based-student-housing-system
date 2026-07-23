@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock, FileWarning } from "lucide-react";
+import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock, FileWarning, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/api/custom-fetch";
 
@@ -547,6 +547,11 @@ export default function Admin() {
           </TabsContent>
 
           <TabsContent value="escrow">
+            <div className="flex justify-end mb-3">
+              <Link href="/admin/escrow" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+                Open full ledger <ArrowLeft className="h-3 w-3 rotate-180" />
+              </Link>
+            </div>
             {escrowBookings.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
                 <Wallet className="h-12 w-12 mx-auto mb-3 text-blue-500 opacity-60" />

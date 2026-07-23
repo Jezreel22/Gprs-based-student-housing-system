@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auditLogTable, bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
+import { bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
+import { writeAudit } from "@/lib/audit";
 import { notifyEscrowFunded } from "@/lib/notify";
 import { getEscrowOfficers } from "@/lib/notify";
 import { createNotification } from "@/lib/notify";
@@ -41,11 +42,13 @@ export async function completeBookingPayout(args: {
   if (result.length === 0) return false;
 
   const [booking] = result;
-  await db.insert(auditLogTable).values({
-    actor_id: booking.landlord_id,
-    action_type: "escrow_released",
-    resource_type: "booking",
-    resource_id: booking.id,
+  await writeAudit({
+    actorId: booking.landlord_id,
+    actionType: "escrow_released",
+    resourceType: "booking",
+    resourceId: booking.id,
+    previousStatus: "release_pending",
+    newStatus: "completed",
     details: { reference: args.reference, transfer_code: args.transferCode ?? null, reason: args.reason ?? "transfer_success_webhook" },
   });
 
@@ -103,11 +106,13 @@ export async function markBookingDisbursed(args: {
   if (result.length === 0) return false;
 
   const [booking] = result;
-  await db.insert(auditLogTable).values({
-    actor_id: args.officerId,
-    action_type: "escrow_disbursed_offline",
-    resource_type: "booking",
-    resource_id: booking.id,
+  await writeAudit({
+    actorId: args.officerId,
+    actionType: "escrow_disbursed_offline",
+    resourceType: "booking",
+    resourceId: booking.id,
+    previousStatus: "release_pending",
+    newStatus: "completed",
     details: { reference: args.reference ?? null, mode: "managed" },
   });
 

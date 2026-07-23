@@ -185,10 +185,29 @@ export const bookingsTable = pgTable("bookings", {
   // Non-null means an escrow officer placed this booking on hold — the lazy
   // auto-release helper skips it. Officer can release early via the override.
   release_held_by_officer_at: timestamp("release_held_by_officer_at"),
+  // Non-null means an escrow officer flagged the payment as under manual
+  // verification (e.g. a bank_transfer booking with no gateway receipt).
+  // Bookings cleared by a Paystack webhook skip this stage — see the admin
+  // escrow ledger for which bookings require officer verification.
+  under_verification_by_officer_at: timestamp("under_verification_by_officer_at"),
 
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),
 });
+
+// ─── booking admin notes ───────────────────────────────────────────────────
+// Append-only internal notes an escrow officer attaches to a booking. There is
+// no UPDATE/DELETE path in code — the table is immutable by convention (and a
+// DB role can revoke write-update as a follow-up). Pairs with the audit trail.
+export const bookingAdminNotesTable = pgTable("booking_admin_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  booking_id: uuid("booking_id").notNull().references(() => bookingsTable.id, { onDelete: "cascade" }),
+  officer_id: uuid("officer_id").references(() => usersTable.id, { onDelete: "set null" }),
+  note: text("note").notNull(),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("booking_admin_notes_booking_created_idx").on(table.booking_id, table.created_at),
+]);
 
 // ─── disputes ──────────────────────────────────────────────────────────────
 export const disputesTable = pgTable("disputes", {
@@ -406,6 +425,8 @@ export type Upload = typeof uploadsTable.$inferSelect;
 export type NewUpload = typeof uploadsTable.$inferInsert;
 export type Booking = typeof bookingsTable.$inferSelect;
 export type NewBooking = typeof bookingsTable.$inferInsert;
+export type BookingAdminNote = typeof bookingAdminNotesTable.$inferSelect;
+export type NewBookingAdminNote = typeof bookingAdminNotesTable.$inferInsert;
 export type Dispute = typeof disputesTable.$inferSelect;
 export type NewDispute = typeof disputesTable.$inferInsert;
 export type Message = typeof messagesTable.$inferSelect;

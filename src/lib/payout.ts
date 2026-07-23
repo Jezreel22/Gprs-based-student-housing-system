@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { bookingsTable, usersTable, auditLogTable } from "@/lib/db/schema";
+import { bookingsTable, usersTable } from "@/lib/db/schema";
+import { writeAudit } from "@/lib/audit";
 import { amountToKobo, createTransferRecipient, initiateTransfer, resolveAccountNumber } from "@/lib/paystack-server";
 import { createNotification, getEscrowOfficers } from "@/lib/notify";
 import { completeBookingPayout } from "@/lib/payment-marks";
@@ -128,11 +129,13 @@ export async function releaseBookingEscrow(
       })
       .where(eq(bookingsTable.id, bookingId));
 
-    await db.insert(auditLogTable).values({
-      actor_id: landlord.id,
-      action_type: "escrow_release_approved",
-      resource_type: "booking",
-      resource_id: booking.id,
+    await writeAudit({
+      actorId: landlord.id,
+      actionType: "escrow_release_approved",
+      resourceType: "booking",
+      resourceId: booking.id,
+      previousStatus: booking.booking_status,
+      newStatus: "release_pending",
       details: { mode: "managed", actor: opts.actorId, reason: opts.reason ?? (opts.force ? "officer_override" : "student_approved") },
     });
 
@@ -232,11 +235,13 @@ export async function releaseBookingEscrow(
       reference,
       reason: `Escrow release — booking ${booking.id}`,
     });
-    await db.insert(auditLogTable).values({
-      actor_id: landlord.id,
-      action_type: "escrow_release_initiated",
-      resource_type: "booking",
-      resource_id: booking.id,
+    await writeAudit({
+      actorId: landlord.id,
+      actionType: "escrow_release_initiated",
+      resourceType: "booking",
+      resourceId: booking.id,
+      previousStatus: booking.booking_status,
+      newStatus: "release_pending",
       details: {
         reference,
         transfer_code: transfer.transfer_code,
@@ -295,11 +300,13 @@ export async function releaseBookingEscrow(
         updated_at: new Date(),
       })
       .where(eq(bookingsTable.id, bookingId));
-    await db.insert(auditLogTable).values({
-      actor_id: landlord.id,
-      action_type: "escrow_release_failed",
-      resource_type: "booking",
-      resource_id: booking.id,
+    await writeAudit({
+      actorId: landlord.id,
+      actionType: "escrow_release_failed",
+      resourceType: "booking",
+      resourceId: booking.id,
+      previousStatus: "release_pending",
+      newStatus: "release_failed",
       details: { reference, error: msg, code, actor: opts.actorId },
     });
 

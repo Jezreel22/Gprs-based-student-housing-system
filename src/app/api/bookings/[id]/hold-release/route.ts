@@ -1,9 +1,10 @@
 import { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { bookingsTable, auditLogTable } from "@/lib/db/schema";
+import { bookingsTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
 import { handleError, jsonResponse, errorResponse } from "@/lib/api";
+import { writeAudit } from "@/lib/audit";
 
 /**
  * POST /api/bookings/[id]/hold-release
@@ -36,11 +37,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       })
       .where(eq(bookingsTable.id, id));
 
-    await db.insert(auditLogTable).values({
-      actor_id: officer.id,
-      action_type: releasing ? "escrow_hold_cleared" : "escrow_hold_set",
-      resource_type: "booking",
-      resource_id: id,
+    await writeAudit({
+      req,
+      actorId: officer.id,
+      actionType: releasing ? "escrow_hold_cleared" : "escrow_hold_set",
+      resourceType: "booking",
+      resourceId: id,
+      previousStatus: booking.booking_status,
+      newStatus: booking.booking_status,
     });
 
     return jsonResponse({ held: !releasing });
