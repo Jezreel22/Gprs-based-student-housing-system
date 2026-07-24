@@ -20,11 +20,26 @@ type Fields = Record<string, unknown>;
 const isProd = process.env.NODE_ENV === "production";
 
 function emit(level: Level, message: string, fields: Fields): void {
+  // Normalize Error instances so JSON.stringify surfaces `name`/`message`
+  // (Error properties are non-enumerable, so a raw Error serializes to `{}`
+  // in production logs and operators can't see what blew up).
+  const normalized: Fields = {};
+  for (const [k, v] of Object.entries(fields)) {
+    if (v instanceof Error) {
+      normalized[k] = { name: v.name, message: v.message, stack: v.stack };
+    } else if (Array.isArray(v)) {
+      normalized[k] = v.map((x) =>
+        x instanceof Error ? { name: x.name, message: x.message } : x,
+      );
+    } else {
+      normalized[k] = v;
+    }
+  }
   const record = {
     timestamp: new Date().toISOString(),
     level,
     message,
-    ...fields,
+    ...normalized,
   };
 
   if (isProd) {

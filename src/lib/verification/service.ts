@@ -3,6 +3,7 @@ import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { verificationChallengesTable, usersTable } from "@/lib/db/schema";
 import { recordTrustEvent } from "@/lib/trust/service";
+import { HttpError } from "@/lib/api";
 
 const TTL_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -20,7 +21,11 @@ async function sendSms(destination: string, token: string) {
 }
 
 export async function requestVerificationChallenge(args: { userId: string; channel: "email" | "sms"; destination: string }) {
-  if (!configured(args.channel)) throw new Error(`${args.channel === "email" ? "RESEND" : "TERMII"} verification is not configured`);
+  if (!configured(args.channel))
+    throw new HttpError(
+      `${args.channel === "email" ? "RESEND" : "TERMII"} verification is not configured`,
+      503,
+    );
   const code = String(randomInt(100000, 1000000));
   const now = new Date();
   const [latest] = await db.select().from(verificationChallengesTable).where(and(eq(verificationChallengesTable.user_id, args.userId), eq(verificationChallengesTable.channel, args.channel), isNull(verificationChallengesTable.consumed_at))).orderBy(desc(verificationChallengesTable.created_at)).limit(1);
