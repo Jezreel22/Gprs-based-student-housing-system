@@ -14,33 +14,45 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // Write paths (PUT/DELETE) below still require auth.
     const { id } = await params;
 
-    const [property] = await db.select().from(propertiesTable).where(eq(propertiesTable.id, id)).limit(1);
-    if (!property) return errorResponse("Property not found", 404);
+    // First round-trip: property + landlord + trust + photos, all in one
+    // joined query. Saves 3 separate awaits on the Supabase pooler (which
+    // costs ~2–3 s per round-trip). We branch with a LEFT JOIN so a property
+    // without a landlord/trust row still returns.
+    const [base] = await db
+      .select({
+        property: propertiesTable,
+        landlord: usersTable,
+        trust: trustScoresTable,
+      })
+      .from(propertiesTable)
+      .leftJoin(usersTable, eq(usersTable.id, propertiesTable.landlord_id))
+      .leftJoin(trustScoresTable, eq(trustScoresTable.user_id, propertiesTable.landlord_id))
+      .where(eq(propertiesTable.id, id))
+      .limit(1);
 
-    // Everything below this point only depends on `property` (its landlord_id
-    // and its id), so we can fan these out in parallel instead of awaiting
-    // them one at a time. On the Supabase pooler each round-trip is ~2–3s;
-    // running these 5 queries concurrently turns a ~15s cold detail load into
-    // ~3s, which is the difference between the page rendering and the
-    // client-side fetch timing out ("Property not found").
-    const [landlordRow, trustRow, photos, propBookings, propPropertyRatings] = await Promise.all([
-      db.select().from(usersTable).where(eq(usersTable.id, property.landlord_id)).limit(1),
-      db.select().from(trustScoresTable).where(eq(trustScoresTable.user_id, property.landlord_id)).limit(1),
+    if (!base) return errorResponse("Property not found", 404);
+    const property = base.property;
+    const landlord = base.landlord;
+    const trust = base.trust;
+
+    // Photos and the property-ratings in parallel — they only depend on
+    // `property.id`. We previously fanned out 5 queries with Promise.all,
+    // but on the pooler's ~15 session slots 5 concurrent queries
+    // collide and EMAXCONNSESSION-fail. Two is safe.
+    const [photos, propPropertyRatings] = await Promise.all([
       db.select().from(propertyPhotosTable).where(eq(propertyPhotosTable.property_id, id)),
-      db.select({ id: bookingsTable.id }).from(bookingsTable).where(eq(bookingsTable.property_id, id)),
       db.select().from(propertyRatingsTable).where(eq(propertyRatingsTable.property_id, id)),
     ]);
-    const [landlord] = landlordRow;
-    const [trust] = trustRow;
 
     // Ratings are tied to bookings, not properties directly — join through bookings
+    const propBookings = await db.select({ id: bookingsTable.id }).from(bookingsTable).where(eq(bookingsTable.property_id, id));
     const bookingIds = propBookings.map((b) => b.id);
     const propRatings = bookingIds.length > 0
       ? await db.select().from(ratingsTable).where(and(inArray(ratingsTable.booking_id, bookingIds), eq(ratingsTable.rating_type, "student_rates_landlord")))
       : [];
 
     // Both sets of raters (landlord-ratings raters and property-ratings raters)
-    // are independent — fetch them together in one round-trip.
+    // share a single users lookup — one round-trip for both.
     const landlordRaterIds = Array.from(new Set(propRatings.map((r) => r.rater_id)));
     const propertyRaterIds = Array.from(new Set(propPropertyRatings.map((r) => r.rater_id)));
     const allRaterIds = Array.from(new Set([...landlordRaterIds, ...propertyRaterIds]));
@@ -48,7 +60,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? await db.select().from(usersTable).where(inArray(usersTable.id, allRaterIds))
       : [];
     const raterMap = new Map(ratersRows.map((r) => [r.id, r]));
-    const propertyRaterMap = raterMap; // same fetch, same map
+    const propertyRaterMap = raterMap;
     const propertyRatingsFormatted: PropertyRatingDetail[] = propPropertyRatings
       .sort((a, b) => (b.created_at?.getTime() ?? 0) - (a.created_at?.getTime() ?? 0))
       .map((r) => {

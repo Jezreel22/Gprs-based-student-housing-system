@@ -41,12 +41,7 @@ const connectionString = process.env.DATABASE_URL ?? "postgres://localhost:5432/
 //   pooler a second chance instead of failing the query outright.
 const client = postgres(connectionString, {
   prepare: false,
-  // Supabase's transaction pooler caps concurrent session slots (~15 on the
-  // free tier). We set max:10 so a single request that fans out parallel
-  // queries (the property-detail route fires several at once) can use most of
-  // the pool, but a couple of requests landing together still stay under the
-  // ceiling. On a paid plan with a larger pool, raise this freely.
-  max: 10,
+  max: 3, // stay under Supabase transaction-pooler session ceiling (~15)
   idle_timeout: 20,
   connect_timeout: 10,
   max_lifetime: 30 * 60, // 30 min — rotate stale sockets before the pooler drops them
