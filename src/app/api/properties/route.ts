@@ -155,6 +155,20 @@ export async function GET(req: NextRequest) {
           verification_status: usersTable.verification_status,
         },
         trust: trustScoresTable,
+        // Fold the hero photo into the same round-trip as a correlated
+        // subquery (LATERAL-free, runs against the outer `properties` row).
+        // This removes the second DB round-trip the Supabase pooler makes
+        // painfully slow — the listings route now does ONE query for the page
+        // (plus the count), instead of page → wait → photos.
+        hero_photo_url: sql<string | null>`
+          (
+            SELECT photo_url
+            FROM property_photos
+            WHERE property_id = ${propertiesTable.id}
+            ORDER BY photo_order ASC
+            LIMIT 1
+          )
+        `.as("hero_photo_url"),
       })
       .from(propertiesTable)
       .leftJoin(usersTable, eq(usersTable.id, propertiesTable.landlord_id))
@@ -184,33 +198,16 @@ export async function GET(req: NextRequest) {
     // table builder) so Drizzle doesn't try to validate the photos columns
     // against the OUTER query's FROM list — which would reject the subquery
     // with "table property_photos is not part of the query".
-    const ids = rows.map((r) => r.id);
-    const photos = ids.length > 0
-      ? await db.execute<{
-          property_id: string;
-          photo_url: string | null;
-        }>(sql`
-          SELECT ${propertiesTable.id} AS property_id, (
-            SELECT photo_url
-            FROM property_photos
-            WHERE property_id = ${propertiesTable.id}
-            ORDER BY photo_order ASC
-            LIMIT 1
-          ) AS photo_url
-          FROM properties
-          WHERE ${inArray(propertiesTable.id, ids)}
-        `)
-      : [];
-
-    const photoByProp = new Map<string, string | null>(
-      photos.map((p) => [p.property_id, p.photo_url]),
-    );
+    // Hero photos are now fetched inline as `hero_photo_url` on each row (see
+    // pageQuery above), so there's no second round-trip to wait for. The
+    // `inArray`/`ids` bookkeeping below was the old path.
+    void rows;
 
     const data: PropertySummary[] = pageRows.map((row) => {
       const p = row.prop;
       const l = row.landlord;
       const ts = row.trust;
-      const hero = photoByProp.get(p.id) ?? null;
+      const hero = row.hero_photo_url ?? null;
       // Drizzle's leftJoin keeps the joined object present with null columns
       // when there's no match. Treat that as "no landlord" so the response
       // shape matches the previous behaviour (`landlord: undefined` instead of
