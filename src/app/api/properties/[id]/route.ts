@@ -17,35 +17,38 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const [property] = await db.select().from(propertiesTable).where(eq(propertiesTable.id, id)).limit(1);
     if (!property) return errorResponse("Property not found", 404);
 
-    const [landlord] = await db.select().from(usersTable).where(eq(usersTable.id, property.landlord_id)).limit(1);
-    const [trust] = await db.select().from(trustScoresTable).where(eq(trustScoresTable.user_id, property.landlord_id)).limit(1);
-    const photos = await db.select().from(propertyPhotosTable).where(eq(propertyPhotosTable.property_id, id));
+    // Everything below this point only depends on `property` (its landlord_id
+    // and its id), so we can fan these out in parallel instead of awaiting
+    // them one at a time. On the Supabase pooler each round-trip is ~2–3s;
+    // running these 5 queries concurrently turns a ~15s cold detail load into
+    // ~3s, which is the difference between the page rendering and the
+    // client-side fetch timing out ("Property not found").
+    const [landlordRow, trustRow, photos, propBookings, propPropertyRatings] = await Promise.all([
+      db.select().from(usersTable).where(eq(usersTable.id, property.landlord_id)).limit(1),
+      db.select().from(trustScoresTable).where(eq(trustScoresTable.user_id, property.landlord_id)).limit(1),
+      db.select().from(propertyPhotosTable).where(eq(propertyPhotosTable.property_id, id)),
+      db.select({ id: bookingsTable.id }).from(bookingsTable).where(eq(bookingsTable.property_id, id)),
+      db.select().from(propertyRatingsTable).where(eq(propertyRatingsTable.property_id, id)),
+    ]);
+    const [landlord] = landlordRow;
+    const [trust] = trustRow;
 
     // Ratings are tied to bookings, not properties directly — join through bookings
-    const propBookings = await db.select({ id: bookingsTable.id }).from(bookingsTable).where(eq(bookingsTable.property_id, id));
     const bookingIds = propBookings.map((b) => b.id);
     const propRatings = bookingIds.length > 0
       ? await db.select().from(ratingsTable).where(and(inArray(ratingsTable.booking_id, bookingIds), eq(ratingsTable.rating_type, "student_rates_landlord")))
       : [];
 
-    const raterIds = Array.from(new Set(propRatings.map((r) => r.rater_id)));
-    const raters = raterIds.length > 0
-      ? await db.select().from(usersTable).where(inArray(usersTable.id, raterIds))
-      : [];
-    const raterMap = new Map(raters.map((r) => [r.id, r]));
-
-    // Property ratings — student's rating of the listing itself (not the
-    // landlord). Stored separately in property_ratings; the unique
-    // (booking_id, rater_id) constraint guarantees one per stay.
-    const propPropertyRatings = await db
-      .select()
-      .from(propertyRatingsTable)
-      .where(eq(propertyRatingsTable.property_id, id));
+    // Both sets of raters (landlord-ratings raters and property-ratings raters)
+    // are independent — fetch them together in one round-trip.
+    const landlordRaterIds = Array.from(new Set(propRatings.map((r) => r.rater_id)));
     const propertyRaterIds = Array.from(new Set(propPropertyRatings.map((r) => r.rater_id)));
-    const propertyRaters = propertyRaterIds.length > 0
-      ? await db.select().from(usersTable).where(inArray(usersTable.id, propertyRaterIds))
+    const allRaterIds = Array.from(new Set([...landlordRaterIds, ...propertyRaterIds]));
+    const ratersRows = allRaterIds.length > 0
+      ? await db.select().from(usersTable).where(inArray(usersTable.id, allRaterIds))
       : [];
-    const propertyRaterMap = new Map(propertyRaters.map((r) => [r.id, r]));
+    const raterMap = new Map(ratersRows.map((r) => [r.id, r]));
+    const propertyRaterMap = raterMap; // same fetch, same map
     const propertyRatingsFormatted: PropertyRatingDetail[] = propPropertyRatings
       .sort((a, b) => (b.created_at?.getTime() ?? 0) - (a.created_at?.getTime() ?? 0))
       .map((r) => {
