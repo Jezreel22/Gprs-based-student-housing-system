@@ -4,20 +4,21 @@
  * LocationPicker
  *
  * A reusable location capture component for the listing wizard.
- * Combines a Google Places autocomplete address search with an interactive
- * draggable map pin so landlords can pinpoint the exact property location
- * without needing to know lat/lng coordinates.
+ * Combines an address search (Mapbox forward geocoding via LocationSearch)
+ * with an interactive draggable map pin so landlords can pinpoint the exact
+ * property location without needing to know lat/lng coordinates.
  *
  * Usage:
  *   <LocationPicker onChange={(coords, label) => { setLocation(coords); }} />
  *
  * `coords` is `{ lat: number; lng: number } | null` when a pin is placed.
  * `label` is a human-readable string (reverse-geocoded from the pin position,
- * or from the Places result).
+ * or from the search result).
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useGoogleMaps } from "@/hooks/use-google-maps";
+import type mapboxgl from "mapbox-gl";
+import { useMapbox } from "@/hooks/use-mapbox";
 import LocationSearch from "./LocationSearch";
 import { MapPin, Loader2 } from "lucide-react";
 import { NAUB_COORDS, NAUB_DEFAULT_ZOOM } from "@/lib/maps/constants";
@@ -30,143 +31,147 @@ interface LocationPickerProps {
   className?: string;
 }
 
+const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
+
 export default function LocationPicker({
   onChange,
   initialCoords = null,
   initialLabel = "",
   className = "",
 }: LocationPickerProps) {
-  const { isLoaded, isError, google } = useGoogleMaps();
+  const { isLoaded, isError, mapboxgl } = useMapbox();
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
+  const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
+  const markerRef = useRef<mapboxgl.Marker | null>(null);
 
   const [coords, setCoords] = useState<MapCentre | null>(initialCoords);
   const [label, setLabel] = useState(initialLabel);
   const [isGeocoding, setIsGeocoding] = useState(false);
 
-  // Initialise or re-initialise the map whenever the google global becomes available.
+  // Initialise or update the map when Mapbox GL becomes available.
   useEffect(() => {
-    if (!isLoaded || !google || !mapRef.current) return;
+    if (!isLoaded || !mapboxgl || !mapRef.current) return;
 
-    // If a map already exists, just update the marker position.
+    // If a map already exists, just move the marker.
     if (mapInstanceRef.current) {
       if (coords) {
-        markerRef.current?.setPosition(coords);
-        mapInstanceRef.current.panTo(coords);
+        markerRef.current?.setLngLat([coords.lng, coords.lat]);
+        mapInstanceRef.current.panTo([coords.lng, coords.lat]);
       }
       return;
     }
 
     // First mount: create the map.
-    const map = new google.maps.Map(mapRef.current, {
-      center: coords ?? NAUB_COORDS,
+    const map = new mapboxgl.Map({
+      container: mapRef.current,
+      style: MAP_STYLE,
+      center: [coords?.lng ?? NAUB_COORDS.lng, coords?.lat ?? NAUB_COORDS.lat],
       zoom: NAUB_DEFAULT_ZOOM,
-      disableDefaultUI: false,
-      zoomControl: true,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
-      styles: [
-        { featureType: "poi", stylers: [{ visibility: "off" }] },
-        { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-      ],
+      attributionControl: true,
     });
+    map.addControl(
+      new mapboxgl.NavigationControl({ showCompass: false }),
+      "top-right"
+    );
 
-    // Single draggable marker — placed at initial coords or NAUB campus.
-    const marker = new google.maps.Marker({
-      position: coords ?? NAUB_COORDS,
-      map,
+    // Single draggable marker.
+    const marker = new mapboxgl.Marker({
       draggable: true,
-      animation: google.maps.Animation.DROP,
-    });
+      color: "#FF5A5F",
+    })
+      .setLngLat([coords?.lng ?? NAUB_COORDS.lng, coords?.lat ?? NAUB_COORDS.lat])
+      .addTo(map);
 
     mapInstanceRef.current = map;
     markerRef.current = marker;
 
     // When the user drags the pin, reverse-geocode and emit.
-    marker.addListener("dragend", async () => {
-      const pos = marker.getPosition();
-      if (!pos) return;
-      const lat = pos.lat();
-      const lng = pos.lng();
-      setCoords({ lat, lng });
-      await reverseGeocode({ lat, lng });
-    });
-
-    // When the map is dragged (not marker), update the marker to match.
-    map.addListener("dragend", () => {
-      const c = map.getCenter();
-      if (!c) return;
-      if (marker.getPosition()?.lat() !== c.lat() || marker.getPosition()?.lng() !== c.lng()) {
-        marker.setPosition(c);
-      }
-    });
-
-    // Click on the map moves the marker.
-    map.addListener("click", (e: google.maps.MapMouseEvent) => {
-      if (!e.latLng) return;
-      marker.setPosition(e.latLng);
-      const newCoords = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+    marker.on("dragend", () => {
+      const lngLat = marker.getLngLat();
+      const newCoords = { lat: lngLat.lat, lng: lngLat.lng };
       setCoords(newCoords);
       reverseGeocode(newCoords);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, google]);
+
+    // Click on the map moves the marker.
+    map.on("click", (e: mapboxgl.MapMouseEvent) => {
+      const newCoords = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+      marker.setLngLat([newCoords.lng, newCoords.lat]);
+      setCoords(newCoords);
+      reverseGeocode(newCoords);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, mapboxgl]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      markerRef.current?.remove();
+      mapInstanceRef.current?.remove();
+      mapInstanceRef.current = null;
+    };
+  }, []);
 
   /**
    * Reverse geocode lat/lng to a human-readable label, then call onChange.
+   * Uses the existing /api/geocode route (Nominatim-backed, no extra key).
    */
-  const reverseGeocode = useCallback(async (c: MapCentre) => {
-    setIsGeocoding(true);
-    try {
-      const res = await fetch(
-        `/api/geocode?latlng=${c.lat},${c.lng}`
-      );
-      if (!res.ok) throw new Error("Geocode failed");
-      const data = await res.json();
-      const first = data?.results?.[0];
-      const resolvedLabel = first?.formatted_address ?? first?.address ?? label;
-      setLabel(resolvedLabel);
-      onChange(c, resolvedLabel);
-    } catch {
-      // Non-critical: keep the label we had; just emit coords.
-      onChange(c, label);
-    } finally {
-      setIsGeocoding(false);
-    }
-  }, [onChange, label]);
+  const reverseGeocode = useCallback(
+    async (c: MapCentre) => {
+      setIsGeocoding(true);
+      try {
+        const res = await fetch(`/api/geocode?latlng=${c.lat},${c.lng}`);
+        if (!res.ok) throw new Error("Geocode failed");
+        const data = await res.json();
+        const first = data?.results?.[0];
+        const resolvedLabel = first?.formatted_address ?? label;
+        setLabel(resolvedLabel);
+        onChange(c, resolvedLabel);
+      } catch {
+        // Non-critical: keep the label we had; just emit coords.
+        onChange(c, label);
+      } finally {
+        setIsGeocoding(false);
+      }
+    },
+    [onChange, label]
+  );
 
   /**
    * Called when the user selects a place from the autocomplete.
    * Centers the map + pin on the chosen location and emits.
    */
   const handlePlaceSelect = useCallback(
-    async (c: MapCentre, placeLabel: string) => {
+    (c: MapCentre, placeLabel: string) => {
       setCoords(c);
       setLabel(placeLabel);
       onChange(c, placeLabel);
 
-      if (mapInstanceRef.current && markerRef.current && google) {
-        mapInstanceRef.current.panTo(c);
-        mapInstanceRef.current.setZoom(17);
-        markerRef.current.setPosition(c);
+      if (mapInstanceRef.current && markerRef.current) {
+        mapInstanceRef.current.flyTo({
+          center: [c.lng, c.lat],
+          zoom: 17,
+          duration: 800,
+        });
+        markerRef.current.setLngLat([c.lng, c.lat]);
       }
     },
-    [google, onChange]
+    [onChange]
   );
 
   if (isError) {
     return (
-      <div className={`rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 ${className}`}>
-        <p>Map failed to load. Please check your Google Maps API key.</p>
+      <div
+        className={`rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 ${className}`}
+      >
+        <p>Map failed to load. Please check your Mapbox token.</p>
       </div>
     );
   }
 
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
-      {/* Address search via Google Places */}
+      {/* Address search */}
       <div>
         <label className="block text-sm font-medium text-foreground mb-1.5">
           Property location
@@ -188,7 +193,8 @@ export default function LocationPicker({
       {isLoaded && (
         <div>
           <p className="text-xs text-muted-foreground mb-1.5">
-            Drag the pin to the exact property location, or tap anywhere on the map.
+            Drag the pin to the exact property location, or tap anywhere on the
+            map.
           </p>
           <div className="relative rounded-xl overflow-hidden border border-[#EBEBEB]">
             <div ref={mapRef} className="w-full h-52" />
@@ -215,7 +221,9 @@ export default function LocationPicker({
           ) : label ? (
             <span className="line-clamp-1">{label}</span>
           ) : (
-            <span>{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}</span>
+            <span>
+              {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+            </span>
           )}
         </div>
       )}

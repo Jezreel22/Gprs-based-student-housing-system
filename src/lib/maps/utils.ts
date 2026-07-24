@@ -1,7 +1,9 @@
 /**
  * lib/maps/utils.ts
  *
- * Pure utility functions for the maps module — no browser globals required.
+ * Utility functions for the maps module. Most are pure (no browser globals);
+ * `iconElement` is the one exception — it builds a DOM node and is only ever
+ * called from client-side map components.
  */
 
 /**
@@ -92,6 +94,61 @@ export function buildMarkerIcon(
   </svg>`;
   const url = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
   return { url, scaledSize: { width: size, height: size } };
+}
+
+/**
+ * Create a coloured SVG pin for the NAUB campus marker (navy rounded square
+ * with a white "N"). Matches the design used across the map experience.
+ */
+export function buildNaubIcon(): {
+  url: string;
+  scaledSize: { width: number; height: number };
+} {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+    <rect x="4" y="4" width="32" height="32" rx="8" fill="#1E3A5F" stroke="white" stroke-width="2.5"/>
+    <text x="20" y="26" font-size="16" text-anchor="middle" fill="white" font-family="sans-serif" font-weight="700">N</text>
+  </svg>`;
+  const url = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  return { url, scaledSize: { width: 40, height: 40 } };
+}
+
+/**
+ * Build a DOM element from an icon data-URI, sized to the icon. Used as the
+ * `element` for a `mapboxgl.Marker` — Mapbox renders markers as DOM nodes, so
+ * we wrap the SVG in a div with the image as its background.
+ *
+ * NOTE: touches `document` — call only in the browser (client map components).
+ */
+export function iconElement(
+  icon: { url: string; scaledSize: { width: number; height: number } },
+  opts: { cursor?: string; className?: string } = {}
+): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.width = `${icon.scaledSize.width}px`;
+  el.style.height = `${icon.scaledSize.height}px`;
+  el.style.backgroundImage = `url("${icon.url}")`;
+  el.style.backgroundSize = "contain";
+  el.style.backgroundRepeat = "no-repeat";
+  el.style.backgroundPosition = "center";
+  el.style.cursor = opts.cursor ?? "pointer";
+  if (opts.className) el.className = opts.className;
+  return el;
+}
+
+/**
+ * Apply an icon (data-URI) at a given size to an existing marker element.
+ * Used to update a Mapbox marker's appearance in place — Mapbox GL JS v3 has no
+ * `Marker.setElement`, so we mutate the element's background and dimensions
+ * directly (Mapbox reads these on each render).
+ */
+export function applyIcon(
+  el: HTMLElement,
+  icon: { url: string },
+  size: number
+): void {
+  el.style.width = `${size}px`;
+  el.style.height = `${size}px`;
+  el.style.backgroundImage = `url("${icon.url}")`;
 }
 
 /**

@@ -4,16 +4,21 @@
  * PropertyMap
  *
  * Small single-property map for the listing detail page. Shows the property
- * pin on a real interactive Google Map with a "Get directions" affordance.
+ * pin on a real interactive Mapbox map with a "Get directions" affordance.
  * Falls back gracefully (via the caller) when lat/lng are null.
  *
- * Reuses useGoogleMaps + buildDirectionsUrl + buildMarkerIcon — same stack as
- * MapView and LocationPicker so we only load the Maps API once per page.
+ * Reuses useMapbox + buildDirectionsUrl + buildMarkerIcon — same stack as
+ * MapView and LocationPicker so we only load Mapbox GL once per page.
  */
 
 import { useEffect, useRef } from "react";
-import { useGoogleMaps } from "@/hooks/use-google-maps";
-import { buildDirectionsUrl, buildMarkerIcon } from "@/lib/maps/utils";
+import type mapboxgl from "mapbox-gl";
+import { useMapbox } from "@/hooks/use-mapbox";
+import {
+  buildDirectionsUrl,
+  buildMarkerIcon,
+  iconElement,
+} from "@/lib/maps/utils";
 
 interface PropertyMapProps {
   lat: number;
@@ -25,6 +30,8 @@ interface PropertyMapProps {
   className?: string;
 }
 
+const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
+
 export default function PropertyMap({
   lat,
   lng,
@@ -33,53 +40,55 @@ export default function PropertyMap({
   height = 320,
   className = "",
 }: PropertyMapProps) {
-  const { isLoaded, isError, google } = useGoogleMaps();
+  const { isLoaded, isError, mapboxgl } = useMapbox();
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
+  const markerRef = useRef<mapboxgl.Marker | null>(null);
 
   // Determine marker colour using the same rules as MapView's property markers.
-  const colour =
-    verified
-      ? "#16A34A"
-      : rentAmountNgn && rentAmountNgn > 100_000
-        ? "#7C3AED"
-        : "#FF5A5F";
+  const colour = verified
+    ? "#16A34A"
+    : rentAmountNgn && rentAmountNgn > 100_000
+      ? "#7C3AED"
+      : "#FF5A5F";
 
   useEffect(() => {
-    if (!isLoaded || !google || !mapRef.current) return;
+    if (!isLoaded || !mapboxgl || !mapRef.current) return;
 
-    // Re-use an existing map instance if coords haven't changed (avoids
-    // re-creating the map on every render). Otherwise build a fresh one.
     if (!mapInstanceRef.current) {
-      mapInstanceRef.current = new google.maps.Map(mapRef.current, {
-        center: { lat, lng },
+      mapInstanceRef.current = new mapboxgl.Map({
+        container: mapRef.current,
+        style: MAP_STYLE,
+        center: [lng, lat],
         zoom: 16,
-        disableDefaultUI: false,
-        zoomControl: true,
-        mapTypeControl: false,
-        streetViewControl: true,
-        fullscreenControl: true,
-        styles: [
-          { featureType: "poi", stylers: [{ visibility: "off" }] },
-          { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
-        ],
+        attributionControl: true,
       });
+      mapInstanceRef.current.addControl(
+        new mapboxgl.NavigationControl({ showCompass: false }),
+        "top-right"
+      );
     } else {
-      mapInstanceRef.current.setCenter({ lat, lng });
+      mapInstanceRef.current.setCenter([lng, lat]);
     }
 
-    const icon = buildMarkerIcon(colour);
-    new google.maps.Marker({
-      position: { lat, lng },
-      map: mapInstanceRef.current,
-      icon: {
-        url: icon.url,
-        scaledSize: new google.maps.Size(icon.scaledSize.width, icon.scaledSize.height),
-      },
-      title: "Property location",
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, google, lat, lng, colour]);
+    markerRef.current?.remove();
+    markerRef.current = new mapboxgl.Marker({
+      element: iconElement(buildMarkerIcon(colour)),
+      anchor: "bottom",
+    })
+      .setLngLat([lng, lat])
+      .addTo(mapInstanceRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, mapboxgl, lat, lng, colour]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      markerRef.current?.remove();
+      mapInstanceRef.current?.remove();
+      mapInstanceRef.current = null;
+    };
+  }, []);
 
   if (isError) {
     return (
@@ -87,7 +96,7 @@ export default function PropertyMap({
         className={`rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 ${className}`}
         style={{ height }}
       >
-        <p>Map failed to load. Check the Google Maps API key configuration.</p>
+        <p>Map failed to load. Check the Mapbox token configuration.</p>
       </div>
     );
   }

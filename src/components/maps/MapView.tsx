@@ -3,41 +3,45 @@
 /**
  * MapView
  *
- * Renders a Google Map centred on NAUB (or a provided centre), plots custom
- * property markers, and manages marker → info-window → property-card
- * synchronisation.
+ * Renders a Mapbox GL map centred on NAUB (or a provided centre), plots custom
+ * property markers, and manages marker → popup → property-card synchronisation.
  *
  * Responsibilities:
- *  - Lazy-loads the Maps API (via useGoogleMaps)
- *  - Creates one google.maps.Marker per property
- *  - Clusters markers in dense areas (manual clustering via grid)
- *  - Opens an InfoWindow with property details on marker click
- *  - Emits `onIdle` so the parent can opt-in to "Search this area"
+ *  - Lazy-loads Mapbox GL (via useMapbox — client-only dynamic import)
+ *  - Creates one mapboxgl.Marker per property
+ *  - Opens a Popup with property details on marker/card selection
+ *  - Emits `onIdle` (on moveend) so the parent can opt-in to "Search this area"
  *  - Exposes `selectedId` + `onSelectProperty` so cards/markers stay in sync
+ *
+ * This is a near 1:1 port of the previous Google Maps implementation — same
+ * props, same imperative handle, same visual language — just on Mapbox GL.
  */
 
 import {
   useEffect,
   useRef,
-  useCallback,
   useState,
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { useGoogleMaps } from "@/hooks/use-google-maps";
+import type mapboxgl from "mapbox-gl";
+import { useMapbox } from "@/hooks/use-mapbox";
 import {
   buildMarkerIcon,
   buildUserLocationIcon,
+  buildNaubIcon,
   buildDirectionsUrl,
   formatDistance,
   formatNGN,
   markerColourForProperty,
+  iconElement,
+  applyIcon,
 } from "@/lib/maps/utils";
 import { NAUB_COORDS, NAUB_DEFAULT_ZOOM } from "@/lib/maps/constants";
 import { trustLevelLabel, trustLevelForScore } from "@/lib/trust/levels";
 import { TRUST_LEVEL_STYLES } from "@/components/trust-level-styles";
 import type { MapBounds, MapCentre, NearbyProperty } from "@/lib/maps/types";
-import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
+import { pickListingPhoto } from "@/lib/listing-photos";
 import { Loader2, MapPin, AlertTriangle } from "lucide-react";
 
 export interface MapViewHandle {
@@ -58,7 +62,7 @@ interface MapViewProps {
   className?: string;
 }
 
-// ── Info-window HTML builder ───────────────────────────────────────────────
+// ── Popup HTML builder ─────────────────────────────────────────────────────
 function buildInfoWindowContent(
   p: NearbyProperty,
   userLocation: MapCentre | null | undefined
@@ -80,7 +84,7 @@ function buildInfoWindowContent(
           src="${img}"
           alt="Property"
           style="width:100%;height:140px;object-fit:cover;display:block;"
-          onerror={'this.src="/listings/listing-1.jpeg"'}
+          onerror="this.src='/listings/listing-1.jpeg'"
         />
         ${
           verified
@@ -122,6 +126,8 @@ function buildInfoWindowContent(
   `;
 }
 
+const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
+
 // ── Component ──────────────────────────────────────────────────────────────
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   {
@@ -136,206 +142,206 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   },
   ref
 ) {
-  const { isLoaded, isError } = useGoogleMaps();
+  const { isLoaded, isError, mapboxgl } = useMapbox();
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
-  const userMarkerRef = useRef<google.maps.Marker | null>(null);
-  const idleListenerRef = useRef<google.maps.MapsEventListener | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mbRef = useRef<typeof mapboxgl | null>(null);
+  const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const naubMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
-  // ── Initialise map ───────────────────────────────────────────────────────
+  // ── Initialise map (once) ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded || !mapContainerRef.current || mapRef.current) return;
+    if (!isLoaded || !mapboxgl || !mapContainerRef.current || mapRef.current)
+      return;
 
-    const gmap = new google.maps.Map(mapContainerRef.current, {
-      center: centre ?? NAUB_COORDS,
-      zoom: zoom ?? NAUB_DEFAULT_ZOOM,
-      disableDefaultUI: false,
-      zoomControl: true,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: true,
-      styles: [
-        { featureType: "poi", stylers: [{ visibility: "off" }] },
-        {
-          featureType: "transit",
-          elementType: "labels.icon",
-          stylers: [{ visibility: "off" }],
-        },
+    mbRef.current = mapboxgl;
+
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: MAP_STYLE,
+      center: [
+        (centre ?? NAUB_COORDS).lng,
+        (centre ?? NAUB_COORDS).lat,
       ],
+      zoom: zoom ?? NAUB_DEFAULT_ZOOM,
+      attributionControl: true,
     });
+
+    map.addControl(
+      new mapboxgl.NavigationControl({ showCompass: false }),
+      "top-right"
+    );
 
     // NAUB campus marker (always visible)
-    new google.maps.Marker({
-      position: NAUB_COORDS,
-      map: gmap,
-      title: "Nigerian Army University Biu (NAUB)",
-      icon: {
-        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-            <rect x="4" y="4" width="32" height="32" rx="8" fill="#1E3A5F" stroke="white" stroke-width="2.5"/>
-            <text x="20" y="26" font-size="16" text-anchor="middle" fill="white" font-family="sans-serif" font-weight="700">N</text>
-          </svg>`
-        )}`,
-        scaledSize: new google.maps.Size(40, 40),
-        anchor: new google.maps.Point(20, 20),
-      },
-      zIndex: 1000,
-    });
+    const naubIcon = buildNaubIcon();
+    naubMarkerRef.current = new mapboxgl.Marker({
+      element: iconElement(naubIcon, { cursor: "default" }),
+      anchor: "center",
+    })
+      .setLngLat([NAUB_COORDS.lng, NAUB_COORDS.lat])
+      .addTo(map);
 
-    infoWindowRef.current = new google.maps.InfoWindow({
-      maxWidth: 280,
-      pixelOffset: new google.maps.Size(0, -5),
+    // Shared popup for property details
+    popupRef.current = new mapboxgl.Popup({
+      offset: 34,
+      maxWidth: "280px",
+      closeButton: true,
     });
+    popupRef.current.on("close", () => onSelectProperty?.(null));
 
-    mapRef.current = gmap;
+    mapRef.current = map;
     setMapReady(true);
-  }, [isLoaded, centre, zoom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, mapboxgl]);
 
   // ── Expose handle to parent ──────────────────────────────────────────────
   useImperativeHandle(ref, () => ({
     panTo: (coords: MapCentre, z?: number) => {
-      mapRef.current?.panTo(coords);
-      if (z != null) mapRef.current?.setZoom(z);
+      const map = mapRef.current;
+      if (!map) return;
+      map.easeTo({
+        center: [coords.lng, coords.lat],
+        zoom: z ?? map.getZoom(),
+        duration: 600,
+      });
     },
     getBounds: (): MapBounds | null => {
       const b = mapRef.current?.getBounds();
       if (!b) return null;
       return {
-        north: b.getNorthEast().lat(),
-        south: b.getSouthWest().lat(),
-        east: b.getNorthEast().lng(),
-        west: b.getSouthWest().lng(),
-      };
+        north: b.getNorth(),
+        south: b.getSouth(),
+        east: b.getEast(),
+        west: b.getWest(),
+      } satisfies MapBounds;
     },
   }));
 
-  // ── Idle → Search-this-area ──────────────────────────────────────────────
+  // ── moveend → Search-this-area ───────────────────────────────────────────
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !onIdle) return;
-
-    if (idleListenerRef.current) {
-      google.maps.event.removeListener(idleListenerRef.current);
-    }
+    const map = mapRef.current;
+    if (!mapReady || !map || !onIdle) return;
 
     let debounce: ReturnType<typeof setTimeout>;
-    idleListenerRef.current = mapRef.current.addListener("idle", () => {
+    const handler = () => {
       clearTimeout(debounce);
       debounce = setTimeout(() => {
-        const m = mapRef.current!;
-        const c = m.getCenter()!;
-        const b = m.getBounds()!;
+        const c = map.getCenter();
+        const b = map.getBounds();
+        if (!c || !b) return;
         onIdle(
-          { lat: c.lat(), lng: c.lng() },
+          { lat: c.lat, lng: c.lng },
           {
-            north: b.getNorthEast().lat(),
-            south: b.getSouthWest().lat(),
-            east: b.getNorthEast().lng(),
-            west: b.getSouthWest().lng(),
+            north: b.getNorth(),
+            south: b.getSouth(),
+            east: b.getEast(),
+            west: b.getWest(),
           }
         );
       }, 600);
-    });
+    };
 
+    map.on("moveend", handler);
     return () => {
-      if (idleListenerRef.current) {
-        google.maps.event.removeListener(idleListenerRef.current);
-      }
+      clearTimeout(debounce);
+      map.off("moveend", handler);
     };
   }, [mapReady, onIdle]);
 
+  // ── Click empty map → deselect ─────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const handler = () => onSelectProperty?.(null);
+    map.on("click", handler);
+    return () => {
+      map.off("click", handler);
+    };
+  }, [mapReady, onSelectProperty]);
+
   // ── Pan to new centre when prop changes ──────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !centre) return;
-    mapRef.current.panTo(centre);
-    if (zoom != null) mapRef.current.setZoom(zoom);
-  }, [centre, zoom]);
+    const map = mapRef.current;
+    if (!mapReady || !map || !centre) return;
+    map.easeTo({
+      center: [centre.lng, centre.lat],
+      zoom: zoom ?? map.getZoom(),
+      duration: 600,
+    });
+  }, [mapReady, centre, zoom]);
 
   // ── User location marker ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const mb = mbRef.current;
+    if (!mapReady || !map || !mb) return;
 
-    userMarkerRef.current?.setMap(null);
+    userMarkerRef.current?.remove();
     userMarkerRef.current = null;
 
     if (!userLocation) return;
 
-    const icon = buildUserLocationIcon();
-    userMarkerRef.current = new google.maps.Marker({
-      position: userLocation,
-      map: mapRef.current,
-      title: "Your location",
-      icon: {
-        url: icon.url,
-        scaledSize: new google.maps.Size(icon.scaledSize.width, icon.scaledSize.height),
-        anchor: new google.maps.Point(12, 12),
-      },
-      zIndex: 999,
-    });
+    userMarkerRef.current = new mb.Marker({
+      element: iconElement(buildUserLocationIcon(), { cursor: "default" }),
+      anchor: "center",
+    })
+      .setLngLat([userLocation.lng, userLocation.lat])
+      .addTo(map);
   }, [mapReady, userLocation]);
 
-  // ── Property markers ─────────────────────────────────────────────────────
+  // ── Property markers (add / remove) ──────────────────────────────────────
   useEffect(() => {
-    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const mb = mbRef.current;
+    if (!mapReady || !map || !mb) return;
 
     const currentIds = new Set(properties.map((p) => p.id));
 
     // Remove stale markers
     markersRef.current.forEach((marker, id) => {
       if (!currentIds.has(id)) {
-        marker.setMap(null);
+        marker.remove();
         markersRef.current.delete(id);
       }
     });
 
-    // Add / update markers
+    // Add new markers
     properties.forEach((p) => {
+      if (markersRef.current.has(p.id)) return;
+
       const colour = markerColourForProperty(
         p.trust_score,
         p.rent_amount_ngn,
         p.landlord?.verification_status ?? null
       );
-      const iconSpec = buildMarkerIcon(colour, selectedId === p.id ? 44 : 36);
-      const icon = {
-        url: iconSpec.url,
-        scaledSize: new google.maps.Size(iconSpec.scaledSize.width, iconSpec.scaledSize.height),
-        anchor: new google.maps.Point(iconSpec.scaledSize.width / 2, iconSpec.scaledSize.height / 2),
-      };
+      const isSelected = p.id === selectedId;
+      const el = iconElement(buildMarkerIcon(colour, isSelected ? 44 : 36));
 
-      const existing = markersRef.current.get(p.id);
-      if (existing) {
-        existing.setIcon(icon);
-        return;
-      }
+      const marker = new mb.Marker({ element: el, anchor: "bottom" })
+        .setLngLat([p.longitude, p.latitude])
+        .addTo(map);
 
-      const marker = new google.maps.Marker({
-        position: { lat: p.latitude, lng: p.longitude },
-        map: mapRef.current!,
-        title: p.address,
-        icon,
-        zIndex: p.id === selectedId ? 500 : 100,
-      });
-
-      marker.addListener("click", () => {
+      // Marker clicks must not bubble to the map's deselect handler.
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
         onSelectProperty?.(p.id);
-        infoWindowRef.current?.setContent(
-          buildInfoWindowContent(p, userLocation)
-        );
-        infoWindowRef.current?.open({
-          anchor: marker,
-          map: mapRef.current!,
-          shouldFocus: false,
-        });
       });
+
+      const node = marker.getElement();
+      node.style.zIndex = isSelected ? "500" : "100";
 
       markersRef.current.set(p.id, marker);
     });
-  }, [mapReady, properties, selectedId, onSelectProperty, userLocation]);
+  }, [mapReady, properties, selectedId, onSelectProperty, mapboxgl]);
 
-  // ── Highlight selected marker ────────────────────────────────────────────
+  // ── Highlight selected marker + open/close popup ──────────────────────────
   useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+
     markersRef.current.forEach((marker, id) => {
       const p = properties.find((pr) => pr.id === id);
       if (!p) return;
@@ -345,30 +351,36 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         p.landlord?.verification_status ?? null
       );
       const isSelected = id === selectedId;
-      const iconSpec = buildMarkerIcon(colour, isSelected ? 44 : 36);
-      marker.setIcon({
-        url: iconSpec.url,
-        scaledSize: new google.maps.Size(iconSpec.scaledSize.width, iconSpec.scaledSize.height),
-        anchor: new google.maps.Point(iconSpec.scaledSize.width / 2, iconSpec.scaledSize.height / 2),
-      });
-      marker.setZIndex(isSelected ? 500 : 100);
+      // Re-style the existing element in place (mapbox-gl v3 has no setElement).
+      applyIcon(marker.getElement(), buildMarkerIcon(colour, isSelected ? 44 : 36), isSelected ? 44 : 36);
+      marker.getElement().style.zIndex = isSelected ? "500" : "100";
     });
-  }, [selectedId, properties]);
 
-  // ── Close info-window when selection cleared ─────────────────────────────
-  useEffect(() => {
-    if (!selectedId) {
-      infoWindowRef.current?.close();
+    // Popup follows the selection so card-clicks and marker-clicks behave alike.
+    if (selectedId) {
+      const p = properties.find((pr) => pr.id === selectedId);
+      if (p && popupRef.current) {
+        popupRef.current
+          .setLngLat([p.longitude, p.latitude])
+          .setHTML(buildInfoWindowContent(p, userLocation))
+          .addTo(map);
+      }
+    } else {
+      popupRef.current?.remove();
     }
-  }, [selectedId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, properties, userLocation, mapReady]);
 
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      markersRef.current.forEach((m) => m.setMap(null));
+      markersRef.current.forEach((m) => m.remove());
       markersRef.current.clear();
-      userMarkerRef.current?.setMap(null);
-      infoWindowRef.current?.close();
+      userMarkerRef.current?.remove();
+      naubMarkerRef.current?.remove();
+      popupRef.current?.remove();
+      mapRef.current?.remove();
+      mapRef.current = null;
     };
   }, []);
 
@@ -380,11 +392,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       >
         <AlertTriangle className="h-8 w-8 text-amber-500" />
         <p className="text-sm font-semibold text-amber-800 text-center px-4">
-          Google Maps failed to load.
+          Map failed to load.
         </p>
         <p className="text-xs text-amber-600 text-center px-6">
-          Check that <code>NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> is set and
-          your API key has the Maps JavaScript API enabled.
+          Check that <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> is set to a valid
+          Mapbox public access token.
         </p>
       </div>
     );
