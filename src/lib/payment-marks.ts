@@ -6,6 +6,7 @@ import { notifyEscrowFunded } from "@/lib/notify";
 import { getEscrowOfficers } from "@/lib/notify";
 import { createNotification } from "@/lib/notify";
 import { recordTrustEvent } from "@/lib/trust/service";
+import { recordSettlement } from "@/lib/escrow-transactions/service";
 
 /**
  * Mark an escrow payout as settled (`release_pending` → `completed`).
@@ -52,6 +53,22 @@ export async function completeBookingPayout(args: {
     details: { reference: args.reference, transfer_code: args.transferCode ?? null, reason: args.reason ?? "transfer_success_webhook" },
   });
 
+  // Issue the official release receipt exactly once. Paystack's transfer
+  // reference is the stable settlement key; webhook replays return the
+  // existing receipt id rather than producing a duplicate.
+  await recordSettlement({
+    bookingId: booking.id,
+    transactionType: "release",
+    receiptKind: "release",
+    paymentMethod: "paystack",
+    amountNgn: booking.total_amount_ngn,
+    settlementKey: args.reference,
+    gateway: "paystack",
+    gatewayReference: args.reference,
+    gatewayTransferCode: args.transferCode ?? null,
+    confirmedAt: new Date(),
+  });
+
   // Successful completed transaction — both participants earn trust. Each party
   // has its own dedupe key so a replayed event can't double-count.
   await recordTrustEvent({
@@ -77,14 +94,15 @@ export async function completeBookingPayout(args: {
 /**
  * Officer confirmation that a platform-managed disbursement was actually sent
  * (the platform owner made the manual bank transfer to the landlord). Flips a
- * `release_pending` booking to `completed` and records audit + trust events.
- * Used only in managed mode; in transfer mode the webhook is the source of
- * truth. Idempotent via the `release_pending` state guard.
+ * `release_pending` booking to `completed`, records the receipt screenshot the
+ * officer attached, and emits audit + trust events + notifications to both
+ * parties. Used only in managed mode; in transfer mode the webhook is the
+ * source of truth. Idempotent via the `release_pending` state guard.
  */
 export async function markBookingDisbursed(args: {
   bookingId: string;
   officerId: string;
-  reference?: string | null;
+  receiptUploadId: string;
 }): Promise<boolean> {
   const result = await db
     .update(bookingsTable)
@@ -92,7 +110,7 @@ export async function markBookingDisbursed(args: {
       booking_status: "completed",
       escrow_released_at: new Date(),
       payout_error: null,
-      payout_transfer_reference: args.reference ?? null,
+      payout_receipt_upload_id: args.receiptUploadId,
       updated_at: new Date(),
     })
     .where(
@@ -113,7 +131,7 @@ export async function markBookingDisbursed(args: {
     resourceId: booking.id,
     previousStatus: "release_pending",
     newStatus: "completed",
-    details: { reference: args.reference ?? null, mode: "managed" },
+    details: { receipt_upload_id: args.receiptUploadId, mode: "managed" },
   });
 
   // Same dedupe keys as the transfer path — safe if both ever run.
@@ -141,6 +159,39 @@ export async function markBookingDisbursed(args: {
     body: "Your escrow payout has been sent to your bank account.",
     relatedId: booking.id,
     relatedType: "booking",
+  });
+
+  // The student paid this money into escrow — let them know the cycle closed.
+  // Fires only on the actual transition (the `release_pending` guard above
+  // already returned false for duplicate calls), so it's exactly-once.
+  await createNotification({
+    userId: booking.student_id,
+    type: "escrow_release",
+    title: "Escrow paid out",
+    body: `Your landlord has been paid for booking ${booking.id.slice(0, 8)}. The transfer has been confirmed by the platform.`,
+    relatedId: booking.id,
+    relatedType: "booking",
+  });
+
+  // Officer-confirmed manual disbursement → issue the official release
+  // receipt, keyed by the existing payout reference so a duplicate officer
+  // confirmation produces exactly one receipt.
+  const settlementKey =
+    booking.payout_transfer_reference && booking.payout_transfer_reference.length > 0
+      ? `manual:${booking.payout_transfer_reference}`
+      : `manual:${booking.id}:${args.receiptUploadId}`;
+  await recordSettlement({
+    bookingId: booking.id,
+    transactionType: "release",
+    receiptKind: "release",
+    paymentMethod: "manual_bank_transfer",
+    amountNgn: booking.total_amount_ngn,
+    settlementKey,
+    gateway: null,
+    gatewayReference: booking.payout_transfer_reference ?? null,
+    initiatedByUserId: args.officerId,
+    evidenceUploadId: args.receiptUploadId,
+    confirmedAt: new Date(),
   });
 
   return true;
@@ -208,6 +259,28 @@ export async function markBookingPaid(args: {
     });
   } catch {
     // Swallow — never regress the paid transition on a notify hiccup.
+  }
+
+  // Issue the official deposit receipt exactly once. Webhook retries and
+  // client verify retries converge on the same settlement key (the Paystack
+  // reference) and return the existing receipt id without creating a new row.
+  try {
+    const rawMethod = booking.payment_method ?? "paystack";
+    const method = rawMethod === "paystack" || rawMethod === "bank_transfer" ? rawMethod : "paystack";
+    await recordSettlement({
+      bookingId: booking.id,
+      transactionType: "deposit",
+      receiptKind: "deposit",
+      paymentMethod: method,
+      amountNgn: booking.total_amount_ngn,
+      settlementKey: args.reference,
+      gateway: method === "paystack" ? "paystack" : null,
+      gatewayReference: args.reference,
+      confirmedAt: new Date(),
+    });
+  } catch {
+    // The receipt is best-effort at this stage — the deposit is the source
+    // of truth and must not be regressed by a downstream failure.
   }
 
   return true;

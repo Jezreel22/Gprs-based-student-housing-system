@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock, FileWarning, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/api/custom-fetch";
+import { EscrowDetailDrawer } from "@/app/admin/escrow/EscrowDetailDrawer";
 
 function formatNGN(n?: number | null) {
   return n ? `₦${n.toLocaleString("en-NG")}` : "₦—";
@@ -44,6 +45,10 @@ export default function Admin() {
   const [adjNotes, setAdjNotes] = useState("");
   const [adjRefundPct, setAdjRefundPct] = useState("");
   const [escrowBusy, setEscrowBusy] = useState<string | null>(null);
+  // Booking opened in the escrow detail drawer (disbursement now goes through
+  // the drawer so the officer must attach a receipt — the row button no longer
+  // marks disbursed in one click).
+  const [openBookingId, setOpenBookingId] = useState<string | null>(null);
   // Report adjudication
   const [adjReport, setAdjReport] = useState<{ id: string; type: string; target: string } | null>(null);
   const [reportStatus, setReportStatus] = useState("substantiated");
@@ -136,18 +141,9 @@ export default function Admin() {
     }
   }
 
-  async function markDisbursed(id: string) {
-    setEscrowBusy(id);
-    try {
-      const res = await customFetch<{ message: string }>(`/api/bookings/${id}/mark-disbursed`, { method: "POST" });
-      toast({ title: res.message ?? "Marked as disbursed" });
-      refetchEscrow();
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Failed", description: e?.message ?? "Try again" });
-    } finally {
-      setEscrowBusy(null);
-    }
-  }
+  // Managed-escrow disbursement now flows through the EscrowDetailDrawer so the
+  // officer must attach a receipt screenshot — see openBookingId / the drawer
+  // rendered at the bottom of the page.
 
   const pendingProps = (pendingPropsData as any)?.data ?? [];
 
@@ -618,10 +614,10 @@ export default function Admin() {
                           <Button
                             size="sm"
                             disabled={escrowBusy === b.id || !hasBank}
-                            onClick={() => markDisbursed(b.id)}
+                            onClick={() => setOpenBookingId(b.id)}
                             style={{ background: "#16A34A", color: "#fff", border: "none" }}
                           >
-                            {escrowBusy === b.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark disbursed"}
+                            Disburse funds
                           </Button>
                         ) : (
                           <Button
@@ -807,6 +803,13 @@ export default function Admin() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Escrow detail drawer — disbursement (with required receipt) happens here. */}
+      <EscrowDetailDrawer
+        bookingId={openBookingId}
+        onClose={() => setOpenBookingId(null)}
+        onMutated={() => refetchEscrow()}
+      />
     </div>
   );
 }

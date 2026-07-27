@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,12 +51,20 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
   const [rejectBusy, setRejectBusy] = useState(false);
   const [disburseOpen, setDisburseOpen] = useState(false);
   const [disburseAgree, setDisburseAgree] = useState(false);
-  const [disburseReference, setDisburseReference] = useState("");
+  const [disburseReceipt, setDisburseReceipt] = useState<File | null>(null);
   const [disburseBusy, setDisburseBusy] = useState(false);
+
+  // Object URL for the selected receipt preview. Revoked when the selection
+  // changes or the drawer closes so we don't leak blob URLs.
+  const receiptPreviewUrl = useMemo(
+    () => (disburseReceipt ? URL.createObjectURL(disburseReceipt) : null),
+    [disburseReceipt],
+  );
+  useEffect(() => () => { if (receiptPreviewUrl) URL.revokeObjectURL(receiptPreviewUrl); }, [receiptPreviewUrl]);
 
   useEffect(() => {
     if (!open) {
-      setNote(""); setRejectReason(""); setDisburseAgree(false); setDisburseReference("");
+      setNote(""); setRejectReason(""); setDisburseAgree(false); setDisburseReceipt(null);
     }
   }, [open]);
 
@@ -107,15 +115,17 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
   }
 
   async function submitDisburse() {
-    if (!bookingId || !disburseAgree) return;
+    if (!bookingId || !disburseAgree || !disburseReceipt) return;
     setDisburseBusy(true);
     try {
+      const form = new FormData();
+      form.append("receipt", disburseReceipt);
       await customFetch(`/api/bookings/${bookingId}/mark-disbursed`, {
         method: "POST",
-        body: JSON.stringify(disburseReference.trim() ? { reference: disburseReference.trim() } : {}),
+        body: form,
       });
       toast({ title: "Disbursement confirmed" });
-      setDisburseOpen(false); setDisburseAgree(false); setDisburseReference("");
+      setDisburseOpen(false); setDisburseAgree(false); setDisburseReceipt(null);
       refetch();
       onMutated();
     } catch (e: any) {
@@ -206,6 +216,25 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
                     </a>
                   ) : "—"}
                 </div>
+                {b.payout_receipt_upload_id && (
+                  <div className="md:col-span-2 flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">Disbursement receipt:</span>
+                    <a
+                      href={`/api/uploads/${b.payout_receipt_upload_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-foreground underline underline-offset-2"
+                    >
+                      View <ExternalLink className="h-3 w-3" />
+                    </a>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/uploads/${b.payout_receipt_upload_id}`}
+                      alt="Disbursement receipt"
+                      className="h-12 rounded border border-[#EBEBEB] object-cover"
+                    />
+                  </div>
+                )}
               </div>
             </section>
 
@@ -462,12 +491,23 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Receipt reference (optional)</Label>
+              <Label className="text-sm font-medium">Bank transfer receipt *</Label>
               <Input
-                placeholder="e.g. NEFT/2026/07/22/0001"
-                value={disburseReference}
-                onChange={(e) => setDisburseReference(e.target.value)}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={(e) => setDisburseReceipt(e.target.files?.[0] ?? null)}
               />
+              {receiptPreviewUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={receiptPreviewUrl}
+                  alt="Receipt preview"
+                  className="mt-2 max-h-40 rounded-md border border-[#EBEBEB] object-contain bg-white"
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Attach a screenshot of the bank transfer (JPG, PNG, WebP, or GIF; max 8 MB). It is stored as part of the immutable audit trail.
+              </p>
             </div>
 
             <label className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg p-3 cursor-pointer">
@@ -478,7 +518,7 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
               />
               <span className="text-xs text-amber-900">
                 I confirm the manual bank transfer of <strong>{formatNGN(b.total_amount_ngn - (b.escrow_fee_ngn ?? 0))}</strong> has been sent
-                to the landlord's account above and the receipt is on file.
+                to the landlord's account above and the receipt screenshot above is authentic.
               </span>
             </label>
           </div>
@@ -486,7 +526,7 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
             <Button variant="outline" disabled={disburseBusy} onClick={() => setDisburseOpen(false)}>Cancel</Button>
             <Button
               style={{ background: "#16A34A", color: "#fff", border: "none" }}
-              disabled={disburseBusy || !disburseAgree}
+              disabled={disburseBusy || !disburseAgree || !disburseReceipt}
               onClick={submitDisburse}
             >
               {disburseBusy ? "Disbursing…" : "Confirm disbursement"}

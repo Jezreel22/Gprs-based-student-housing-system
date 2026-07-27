@@ -153,6 +153,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         payout_initiated_at: booking.payout_initiated_at?.toISOString() ?? null,
         payout_attempts: booking.payout_attempts ?? 0,
         payout_error: booking.payout_error ?? null,
+        payout_receipt_upload_id: booking.payout_receipt_upload_id ?? null,
         release_held: booking.release_held_by_officer_at != null,
         release_held_at: booking.release_held_by_officer_at?.toISOString() ?? null,
         under_verification: Boolean(booking.under_verification_by_officer_at),

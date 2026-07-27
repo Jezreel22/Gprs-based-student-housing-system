@@ -182,6 +182,11 @@ export const bookingsTable = pgTable("bookings", {
   payout_initiated_at: timestamp("payout_initiated_at"),
   payout_attempts: integer("payout_attempts").default(0),
   payout_error: text("payout_error"),
+  // Receipt screenshot attached by the escrow officer when confirming a
+  // managed-mode disbursement. NULL for bookings completed before the rule
+  // existed, and for `transfer`-mode disbursements (those go through the
+  // Paystack webhook, not the officer button).
+  payout_receipt_upload_id: uuid("payout_receipt_upload_id").references(() => uploadsTable.id, { onDelete: "set null" }),
   // Non-null means an escrow officer placed this booking on hold — the lazy
   // auto-release helper skips it. Officer can release early via the override.
   release_held_by_officer_at: timestamp("release_held_by_officer_at"),
@@ -194,6 +199,79 @@ export const bookingsTable = pgTable("bookings", {
   created_at: timestamp("created_at").defaultNow(),
   updated_at: timestamp("updated_at").defaultNow(),
 });
+
+// ─── escrow financial transactions + official receipts ─────────────────────
+// A booking remains the escrow aggregate. These rows model each immutable money
+// movement (deposit, release, refund) and the official document issued for a
+// confirmed movement. Do not update receipt snapshots after issuance.
+export const escrowTransactionsTable = pgTable("escrow_transactions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  booking_id: uuid("booking_id").notNull().references(() => bookingsTable.id),
+  original_transaction_id: uuid("original_transaction_id").references((): any => escrowTransactionsTable.id),
+  initiated_by_user_id: uuid("initiated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  evidence_upload_id: uuid("evidence_upload_id").references(() => uploadsTable.id, { onDelete: "set null" }),
+
+  transaction_type: text("transaction_type").notNull(),
+  transaction_status: text("transaction_status").notNull().default("pending"),
+  settlement_key: text("settlement_key").notNull(),
+  amount_ngn: integer("amount_ngn").notNull(),
+  currency: text("currency").notNull().default("NGN"),
+  payment_method: text("payment_method").notNull(),
+  gateway: text("gateway"),
+  gateway_reference: text("gateway_reference"),
+  gateway_transaction_id: text("gateway_transaction_id"),
+  gateway_transfer_code: text("gateway_transfer_code"),
+  gateway_event_id: text("gateway_event_id"),
+  failure_reason: text("failure_reason"),
+  confirmed_at: timestamp("confirmed_at"),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+  updated_at: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("escrow_transactions_booking_type_settlement_key_idx")
+    .on(table.booking_id, table.transaction_type, table.settlement_key),
+  uniqueIndex("escrow_transactions_gateway_event_idx")
+    .on(table.gateway_event_id)
+    .where(sql`${table.gateway_event_id} IS NOT NULL`),
+  index("escrow_transactions_booking_created_idx").on(table.booking_id, table.created_at),
+  index("escrow_transactions_status_created_idx").on(table.transaction_status, table.created_at),
+  index("escrow_transactions_original_idx").on(table.original_transaction_id),
+  check("escrow_transactions_amount_positive", sql`${table.amount_ngn} > 0`),
+  check(
+    "escrow_transactions_type_check",
+    sql`${table.transaction_type} IN ('deposit', 'release', 'refund')`,
+  ),
+  check(
+    "escrow_transactions_status_check",
+    sql`${table.transaction_status} IN ('pending', 'succeeded', 'failed', 'reversed', 'manual_review')`,
+  ),
+]);
+
+export const escrowReceiptsTable = pgTable("escrow_receipts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  transaction_id: uuid("transaction_id").notNull().unique()
+    .references(() => escrowTransactionsTable.id),
+  booking_id: uuid("booking_id").notNull().references(() => bookingsTable.id),
+  receipt_number: text("receipt_number").notNull().unique(),
+  receipt_kind: text("receipt_kind").notNull(),
+  verification_token: uuid("verification_token").notNull().unique().defaultRandom(),
+  issued_at: timestamp("issued_at").defaultNow().notNull(),
+  issued_by_user_id: uuid("issued_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  document_version: integer("document_version").notNull().default(1),
+  snapshot: jsonb("snapshot").notNull(),
+  created_at: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("escrow_receipts_booking_issued_idx").on(table.booking_id, table.issued_at),
+  index("escrow_receipts_issued_idx").on(table.issued_at),
+  check("escrow_receipts_kind_check", sql`${table.receipt_kind} IN ('deposit', 'release', 'refund')`),
+]);
+
+export const receiptDailyCountersTable = pgTable("receipt_daily_counters", {
+  receipt_date: date("receipt_date").notNull(),
+  receipt_prefix: text("receipt_prefix").notNull(),
+  last_value: integer("last_value").notNull().default(0),
+}, (table) => [
+  unique("receipt_daily_counters_date_prefix_unique").on(table.receipt_date, table.receipt_prefix),
+]);
 
 // ─── booking admin notes ───────────────────────────────────────────────────
 // Append-only internal notes an escrow officer attaches to a booking. There is
@@ -443,6 +521,12 @@ export type TrustReport = typeof trustReportsTable.$inferSelect;
 export type NewTrustReport = typeof trustReportsTable.$inferInsert;
 export type VerificationChallenge = typeof verificationChallengesTable.$inferSelect;
 export type NewVerificationChallenge = typeof verificationChallengesTable.$inferInsert;
+export type EscrowTransaction = typeof escrowTransactionsTable.$inferSelect;
+export type NewEscrowTransaction = typeof escrowTransactionsTable.$inferInsert;
+export type EscrowReceipt = typeof escrowReceiptsTable.$inferSelect;
+export type NewEscrowReceipt = typeof escrowReceiptsTable.$inferInsert;
+export type ReceiptDailyCounter = typeof receiptDailyCountersTable.$inferSelect;
+export type NewReceiptDailyCounter = typeof receiptDailyCountersTable.$inferInsert;
 export type AuditLog = typeof auditLogTable.$inferSelect;
 export type NewAuditLog = typeof auditLogTable.$inferInsert;
 export type Notification = typeof notificationsTable.$inferSelect;
