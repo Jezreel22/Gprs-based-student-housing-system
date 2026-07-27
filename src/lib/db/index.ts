@@ -43,7 +43,7 @@ const client = postgres(connectionString, {
   prepare: false,
   max: 3, // stay under Supabase transaction-pooler session ceiling (~15)
   idle_timeout: 20,
-  connect_timeout: 10,
+  connect_timeout: 30,  // Give the pooler more time to connect (Frankfurt from this machine can be slow)
   max_lifetime: 30 * 60, // 30 min — rotate stale sockets before the pooler drops them
   keep_alive: 30, // TCP keepalive every 30s so idle sockets stay warm
   backoff: true, // retry transient connect failures with exponential backoff
