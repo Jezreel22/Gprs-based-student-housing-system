@@ -111,6 +111,68 @@ export function verifyWebhookSignature(rawBody: string, signatureHeader: string 
 
 export { PAYSTACK_CURRENCY };
 
+// ─── Refunds ────────────────────────────────────────────────────────────────
+//
+// Paystack refunds are server-only: they need the secret key and must never be
+// called from a browser. The wrapper accepts the *original* confirmed charge
+// reference and the exact kobo amount — refusing to guess or "split" the
+// amount — so a replayed request can never refund more or less than the
+// originating leg was worth.
+
+interface RefundResult {
+  status: "pending" | "processed" | "failed";
+  reference: string | null;
+  amountKobo: number;
+  gatewayRefundId: string | null;
+  raw: unknown;
+}
+
+/**
+ * Initiate a refund against a previously successful Paystack charge. Returns
+ * a normalised result; the caller is responsible for waiting on the
+ * `refund.processed` webhook to issue the official refund receipt.
+ */
+export async function initiateRefund(input: {
+  /** Original confirmed charge reference (e.g. NAUB-...). */
+  chargeReference: string;
+  /** Exact amount in kobo — must equal or be less than the captured charge. */
+  amountKobo: number;
+  /** Optional merchant reference; Paystack deduplicates on this value. */
+  merchantReference?: string;
+}): Promise<RefundResult> {
+  assertConfigured();
+  const res = await fetch(`${PAYSTACK_BASE}/refund`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      transaction: input.chargeReference,
+      amount: input.amountKobo,
+      currency: PAYSTACK_CURRENCY,
+      merchant_note: "NAUB Home Finder escrow refund",
+      reference: input.merchantReference ?? undefined,
+    }),
+    cache: "no-store",
+  });
+  const json = (await res.json()) as any;
+  if (!res.ok) {
+    const msg = json?.message ?? `Paystack initiateRefund failed (HTTP ${res.status})`;
+    const err: any = new Error(msg);
+    err.paystack = json;
+    throw err;
+  }
+  const data = json?.data ?? {};
+  return {
+    status: String(data.status ?? "pending").toLowerCase() as RefundResult["status"],
+    reference: data.transaction_reference ?? data.reference ?? null,
+    amountKobo: Number(data.amount ?? input.amountKobo),
+    gatewayRefundId: data.id ? String(data.id) : null,
+    raw: json,
+  };
+}
+
 // ─── Transfers / payouts ────────────────────────────────────────────────────
 //
 // On a charge, money lands in the platform's main Paystack merchant balance

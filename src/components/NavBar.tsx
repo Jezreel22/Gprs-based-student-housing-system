@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, User, LogOut, LayoutDashboard, Home, PlusCircle, MessageSquare, Shield, ShoppingBag, MapPin } from "lucide-react";
+import { Menu, User, LogOut, LayoutDashboard, Home, PlusCircle, MessageSquare, Shield, ShoppingBag, MapPin, Receipt, Moon, Sun } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // Human-readable role labels + colors for the avatar chip.
@@ -45,6 +45,38 @@ interface StoredUser {
   first_name?: string | null;
   last_name?: string | null;
   profile_photo_url?: string | null;
+}
+
+function ThemeToggle() {
+  const [mounted, setMounted] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    const stored = window.localStorage.getItem("naub_theme");
+    const prefers = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setIsDark(stored ? stored === "dark" : prefers);
+  }, []);
+
+  // Apply the class to the document so the CSS custom-variant (`@custom-variant dark (&:is(.dark *))`)
+  // resolves to the dark palette. Keeping the toggle here means we don't have
+  // to mount another provider in `components/providers.tsx`.
+  useEffect(() => {
+    if (!mounted) return;
+    const root = document.documentElement;
+    if (isDark) root.classList.add("dark"); else root.classList.remove("dark");
+    window.localStorage.setItem("naub_theme", isDark ? "dark" : "light");
+  }, [isDark, mounted]);
+
+  return (
+    <button
+      type="button"
+      aria-label="Toggle theme"
+      onClick={() => setIsDark((v) => !v)}
+      className="rounded-full p-2 text-foreground hover:bg-[#F7F7F7] dark:hover:bg-card transition-colors"
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
+  );
 }
 
 export default function NavBar() {
@@ -127,6 +159,28 @@ export default function NavBar() {
               My Bookings
             </Link>
           )}
+          {user && user.role !== "escrow_officer" && (
+            <Link href="/transactions"
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                pathname?.startsWith("/transactions")
+                  ? "text-primary bg-primary/10"
+                  : "text-foreground hover:bg-[#F7F7F7]"
+              }`}>
+              <Receipt className="h-3.5 w-3.5 inline mr-1 -mt-0.5" />
+              Transactions
+            </Link>
+          )}
+          {user?.role === "escrow_officer" && (
+            <Link href="/admin/transactions"
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                pathname?.startsWith("/admin/transactions")
+                  ? "text-primary bg-primary/10"
+                  : "text-foreground hover:bg-[#F7F7F7]"
+              }`}>
+              <Receipt className="h-3.5 w-3.5 inline mr-1 -mt-0.5" />
+              Transactions
+            </Link>
+          )}
           {user && (
             <Link href="/messages"
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -152,6 +206,7 @@ export default function NavBar() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <InstallPWAButton />
           {!user ? (
             <>
@@ -204,6 +259,16 @@ export default function NavBar() {
                 {user.role !== "escrow_officer" && (
                   <DropdownMenuItem onClick={() => router.push("/bookings")}>
                     <ShoppingBag className="h-4 w-4 mr-2" /> My Bookings
+                  </DropdownMenuItem>
+                )}
+                {user.role !== "escrow_officer" && (
+                  <DropdownMenuItem onClick={() => router.push("/transactions")}>
+                    <Receipt className="h-4 w-4 mr-2" /> Transactions
+                  </DropdownMenuItem>
+                )}
+                {user.role === "escrow_officer" && (
+                  <DropdownMenuItem onClick={() => router.push("/admin/transactions")}>
+                    <Receipt className="h-4 w-4 mr-2" /> Transactions
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={() => router.push("/messages")}>
