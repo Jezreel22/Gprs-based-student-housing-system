@@ -60,6 +60,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var r=document.documentElement;r.classList.remove('dark');try{delete localStorage.naub_theme}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body>
         <Providers>{children}</Providers>
       </body>
