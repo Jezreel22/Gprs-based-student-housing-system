@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ThemeProvider } from "next-themes";
 import { setAuthTokenGetter } from "@/api";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
@@ -34,16 +33,14 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-        <QueryClientProvider client={queryClient}>
-          <TooltipProvider>
-            {children}
-            <Toaster />
-            <ServiceWorkerRegister />
-          </TooltipProvider>
-        </QueryClientProvider>
-      </GoogleOAuthProvider>
-    </ThemeProvider>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          {children}
+          <Toaster />
+          <ServiceWorkerRegister />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </GoogleOAuthProvider>
   );
 }
