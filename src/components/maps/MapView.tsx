@@ -25,6 +25,7 @@ import {
   useImperativeHandle,
 } from "react";
 import type mapboxgl from "mapbox-gl";
+import type { Feature, Polygon, FeatureCollection } from "geojson";
 import { useMapbox } from "@/hooks/use-mapbox";
 import {
   buildMarkerIcon,
@@ -36,8 +37,9 @@ import {
   markerColourForProperty,
   iconElement,
   applyIcon,
+  accuracyCircleFeature,
 } from "@/lib/maps/utils";
-import { NAUB_COORDS, NAUB_DEFAULT_ZOOM } from "@/lib/maps/constants";
+import { NAUB_COORDS, NAUB_DEFAULT_ZOOM, MARKER_COLOURS } from "@/lib/maps/constants";
 import { trustLevelLabel, trustLevelForScore } from "@/lib/trust/levels";
 import { TRUST_LEVEL_STYLES } from "@/components/trust-level-styles";
 import type { MapBounds, MapCentre, NearbyProperty } from "@/lib/maps/types";
@@ -47,6 +49,9 @@ import { Loader2, MapPin, AlertTriangle } from "lucide-react";
 export interface MapViewHandle {
   /** Pan/zoom the map to a given coordinate */
   panTo: (coords: MapCentre, zoom?: number) => void;
+  /** Smoothly fly to a coordinate — for deliberate destination moves (locate,
+   *  search selection). Omits `essential` so reduced-motion users jump instead. */
+  flyTo: (coords: MapCentre, zoom?: number) => void;
   /** Return current visible bounds */
   getBounds: () => MapBounds | null;
 }
@@ -56,6 +61,8 @@ interface MapViewProps {
   centre?: MapCentre;
   zoom?: number;
   userLocation?: MapCentre | null;
+  /** GPS accuracy of the user fix, in metres — renders the accuracy circle. */
+  userAccuracy?: number | null;
   selectedId?: string | null;
   onSelectProperty?: (id: string | null) => void;
   onIdle?: (centre: MapCentre, bounds: MapBounds) => void;
@@ -128,6 +135,9 @@ function buildInfoWindowContent(
 
 const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
 
+/** Placeholder data for the accuracy source until/unless a fix exists. */
+const EMPTY_ACCURACY_FC: FeatureCollection = { type: "FeatureCollection", features: [] };
+
 // ── Component ──────────────────────────────────────────────────────────────
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   {
@@ -135,6 +145,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     centre,
     zoom,
     userLocation,
+    userAccuracy,
     selectedId,
     onSelectProperty,
     onIdle,
@@ -151,6 +162,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const naubMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  // Accuracy data that arrived before the map style finished loading —
+  // flushed by the "load" handler in the init effect.
+  const pendingAccuracyDataRef = useRef<Feature<Polygon> | FeatureCollection | null>(null);
+  // Last zoom prop we animated to. The prop is React state that never sees
+  // wheel-zoom, so we must not reapply it on every centre change.
+  const lastAppliedZoomRef = useRef<number | null>(null);
+  // Set by the flyTo handle: a flyTo is always paired with a centre prop
+  // update from the parent (both callers setCentre too), so the centre
+  // effect must skip its competing easeTo exactly once.
+  const suppressCentreAnimRef = useRef(false);
 
   // ── Initialise map (once) ─────────────────────────────────────────────────
   useEffect(() => {
@@ -192,6 +213,36 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     });
     popupRef.current.on("close", () => onSelectProperty?.(null));
 
+    // Accuracy-circle source + layers. Unlike DOM markers, sources/layers
+    // require the style to be loaded — create them once on "load". If the
+    // data effect already ran with a fix (a cached geolocation resolving
+    // mid-init), flush the buffered data. `map.remove()` on unmount disposes
+    // the listener, source and layers, so no separate cleanup is needed.
+    map.on("load", () => {
+      map.addSource("user-accuracy", { type: "geojson", data: EMPTY_ACCURACY_FC });
+      map.addLayer({
+        id: "user-accuracy-fill",
+        type: "fill",
+        source: "user-accuracy",
+        paint: { "fill-color": MARKER_COLOURS.user, "fill-opacity": 0.08 },
+      });
+      map.addLayer({
+        id: "user-accuracy-line",
+        type: "line",
+        source: "user-accuracy",
+        paint: {
+          "line-color": MARKER_COLOURS.user,
+          "line-opacity": 0.35,
+          "line-width": 1.5,
+        },
+      });
+      const pending = pendingAccuracyDataRef.current;
+      if (pending) {
+        (map.getSource("user-accuracy") as mapboxgl.GeoJSONSource).setData(pending);
+        pendingAccuracyDataRef.current = null;
+      }
+    });
+
     mapRef.current = map;
     setMapReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,6 +257,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         center: [coords.lng, coords.lat],
         zoom: z ?? map.getZoom(),
         duration: 600,
+      });
+    },
+    flyTo: (coords: MapCentre, z?: number) => {
+      const map = mapRef.current;
+      if (!map) return;
+      suppressCentreAnimRef.current = true;
+      map.flyTo({
+        center: [coords.lng, coords.lat],
+        zoom: z ?? map.getZoom(),
+        duration: 1000,
       });
     },
     getBounds: (): MapBounds | null => {
@@ -266,9 +327,20 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map || !centre) return;
+    // Track zoom-prop changes regardless of how we animate.
+    const zoomChanged = lastAppliedZoomRef.current !== zoom;
+    lastAppliedZoomRef.current = zoom ?? null;
+    // A flyTo just started for this same destination — don't fight it.
+    if (suppressCentreAnimRef.current) {
+      suppressCentreAnimRef.current = false;
+      return;
+    }
+    // Animate the zoom only when the zoom PROP changed. It's React state that
+    // never sees wheel-zoom, so reapplying it on every centre change would snap
+    // the user's manual zoom back to the stale state value.
     map.easeTo({
       center: [centre.lng, centre.lat],
-      zoom: zoom ?? map.getZoom(),
+      zoom: zoomChanged ? (zoom ?? map.getZoom()) : map.getZoom(),
       duration: 600,
     });
   }, [mapReady, centre, zoom]);
@@ -291,6 +363,25 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       .setLngLat([userLocation.lng, userLocation.lat])
       .addTo(map);
   }, [mapReady, userLocation]);
+
+  // ── Accuracy circle data ─────────────────────────────────────────────────
+  // Only mutates the source (created once on "load" in the init effect). If
+  // the style hasn't loaded yet, buffer the data — the load handler flushes
+  // it. Empty FeatureCollection hides the circle when there's no fix.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const data =
+      userLocation && userAccuracy != null
+        ? accuracyCircleFeature(userLocation.lat, userLocation.lng, userAccuracy)
+        : EMPTY_ACCURACY_FC;
+    const source = map.getSource("user-accuracy") as mapboxgl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+    } else {
+      pendingAccuracyDataRef.current = data;
+    }
+  }, [mapReady, userLocation, userAccuracy]);
 
   // ── Property markers (add / remove) ──────────────────────────────────────
   useEffect(() => {

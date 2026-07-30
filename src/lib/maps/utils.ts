@@ -6,6 +6,8 @@
  * called from client-side map components.
  */
 
+import type { Feature, Polygon } from "geojson";
+
 /**
  * Haversine distance between two lat/lng pairs, in kilometres.
  * Used client-side to compute distances in the UI without a server round-trip.
@@ -164,4 +166,69 @@ export function buildUserLocationIcon(): {
   </svg>`;
   const url = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
   return { url, scaledSize: { width: 24, height: 24 } };
+}
+
+// ── Location accuracy visualisation ──────────────────────────────────────
+
+// Metres. Deliberately the same Earth radius as `haversineKm` above (6371 km)
+// so distances measured with haversineKm agree with the circle geometry.
+const EARTH_RADIUS_M = 6371e3;
+
+/**
+ * Build a GeoJSON Polygon approximating a circle around a point — used to
+ * render a device's GPS accuracy radius as a filled map layer. 64 vertices
+ * via the spherical destination-point formula, swept clockwise-from-north in
+ * reverse so the exterior ring winds counter-clockwise per RFC 7946; the ring
+ * is closed (first ≡ last) giving 65 coordinates.
+ *
+ * Pure — safe to unit-test without a browser. Feed the result to a Mapbox
+ * GeoJSON source's `setData`.
+ */
+export function accuracyCircleFeature(
+  lat: number,
+  lng: number,
+  radiusMeters: number
+): Feature<Polygon> {
+  const STEPS = 64;
+  // Angular distance in radians; floor at 1 m so a degenerate radius still
+  // produces a (tiny) valid ring rather than 65 identical points.
+  const delta = Math.max(radiusMeters, 1) / EARTH_RADIUS_M;
+  const phi1 = toRad(lat);
+  const lambda1 = toRad(lng);
+  const sinPhi1 = Math.sin(phi1);
+  const cosPhi1 = Math.cos(phi1);
+  const sinDelta = Math.sin(delta);
+  const cosDelta = Math.cos(delta);
+
+  const ring: number[][] = [];
+  for (let i = STEPS; i > 0; i--) {
+    const bearing = (2 * Math.PI * i) / STEPS;
+    const phi2 = Math.asin(
+      sinPhi1 * cosDelta + cosPhi1 * sinDelta * Math.cos(bearing)
+    );
+    const lambda2 =
+      lambda1 +
+      Math.atan2(
+        Math.sin(bearing) * sinDelta * cosPhi1,
+        cosDelta - sinPhi1 * Math.sin(phi2)
+      );
+    ring.push([(lambda2 * 180) / Math.PI, (phi2 * 180) / Math.PI]);
+  }
+  // Close the ring exactly — avoids float drift between first and last vertex.
+  ring.push([...ring[0]]);
+
+  return {
+    type: "Feature",
+    properties: null,
+    geometry: { type: "Polygon", coordinates: [ring] },
+  };
+}
+
+/**
+ * Format a GPS accuracy radius for display.
+ * < 1000 m → "±35 m"; ≥ 1000 m → "±1.2 km".
+ */
+export function formatAccuracy(meters: number): string {
+  if (meters < 1000) return `±${Math.round(meters)} m`;
+  return `±${(meters / 1000).toFixed(1)} km`;
 }

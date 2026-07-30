@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /map page — full Google Maps + nearby properties experience.
+ * /map page — full Mapbox GL + nearby properties experience.
  *
  * Layout:
  *  Desktop: [Filters sidebar | Map (flex-1) | Property list panel]
@@ -10,7 +10,7 @@
  * Features implemented:
  *  ✓ Centres on NAUB by default
  *  ✓ "Use My Location" button
- *  ✓ Google Places Autocomplete search
+ *  ✓ Address autocomplete search (Mapbox Geocoding, /api/geocode fallback)
  *  ✓ Custom markers (verified/premium/standard)
  *  ✓ Marker ↔ card selection sync
  *  ✓ Info-window with property details
@@ -21,8 +21,7 @@
  *  ✓ Graceful error states for Map API / Geolocation failures
  */
 
-import { useState, useRef, useCallback, Suspense } from "react";
-import dynamic from "next/dynamic";
+import { useState, useRef, useCallback, useEffect, Suspense } from "react";
 import NavBar from "@/components/NavBar";
 import LocationSearch from "@/components/maps/LocationSearch";
 import MapFiltersPanel from "@/components/maps/MapFiltersPanel";
@@ -30,6 +29,7 @@ import NearbyPropertyCard from "@/components/maps/NearbyPropertyCard";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useNearbyProperties } from "@/hooks/use-nearby-properties";
 import { NAUB_COORDS, NAUB_DEFAULT_ZOOM } from "@/lib/maps/constants";
+import { formatAccuracy } from "@/lib/maps/utils";
 import type {
   MapBounds,
   MapCentre,
@@ -47,21 +47,8 @@ import {
   MapPinOff,
 } from "lucide-react";
 
-// Lazy-load MapView so the heavy Google Maps component doesn't block initial
-// page render — it's only needed once the user navigates to /map.
-
-// const MapView = dynamic(() => import("@/components/maps/MapView"), {
-//   ssr: false,
-//   loading: () => (
-//     <div className="w-full h-full flex items-center justify-center bg-[#F7F7F7] rounded-2xl">
-//       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-//         <Loader2 className="h-4 w-4 animate-spin" />
-//         Preparing map…
-//       </div>
-//     </div>
-//   ),
-// });
-
+// MapView is imported directly above — the mapbox-gl runtime itself is
+// lazy-loaded inside it (useMapbox), so the page bundle stays lean.
 const DEFAULT_FILTERS: MapFilters = {
   radius_km: 5,
   rent_min: undefined,
@@ -102,19 +89,21 @@ function MapPageInner() {
     geo.requestLocation();
   }, [geo]);
 
-  // When location resolves, fly to it
-  const prevGeoCoords = useRef<{ lat: number; lng: number } | null>(null);
-  if (
-    geo.coords &&
-    (prevGeoCoords.current?.lat !== geo.coords.lat ||
-      prevGeoCoords.current?.lng !== geo.coords.lng)
-  ) {
+  // When a new fix resolves, re-centre on it. Identity compare (not lat/lng
+  // values): each fix is a fresh state object, so a cached fix within the
+  // 60s maximumAge with identical coordinates still re-centres — the old
+  // value compare made a second click a no-op after the user panned away.
+  const prevGeoCoords = useRef<typeof geo.coords>(null);
+  useEffect(() => {
+    if (!geo.coords || prevGeoCoords.current === geo.coords) return;
     prevGeoCoords.current = geo.coords;
-    setCentre(geo.coords);
+    setCentre(geo.coords); // drives the nearby-properties query
     setMapZoom(15);
     setSearchLabel("Your location");
     setShowSearchArea(false);
-  }
+    // Smooth flight; MapView suppresses its competing centre easeTo once.
+    mapRef.current?.flyTo(geo.coords, 15);
+  }, [geo.coords]);
 
   // ── Nearby properties ─────────────────────────────────────────────────────
   const { data, isLoading, isFetching, error } = useNearbyProperties({
@@ -157,7 +146,7 @@ function MapPageInner() {
       setSearchLabel(label);
       setActiveBounds(null);
       setShowSearchArea(false);
-      mapRef.current?.panTo(coords, 15);
+      mapRef.current?.flyTo(coords, 15);
     },
     []
   );
@@ -252,9 +241,22 @@ function MapPageInner() {
               : "Failed to load nearby properties."}
           </span>
           {geo.error && (
-            <button onClick={geo.clearError}>
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Retry is only offered when it could actually succeed —
+                  re-requesting after a hard denial or on an unsupported
+                  browser would just fail again. */}
+              {(geo.error === "position_unavailable" || geo.error === "timeout") && (
+                <button
+                  onClick={geo.requestLocation}
+                  className="font-semibold underline underline-offset-2 hover:text-amber-900"
+                >
+                  Try again
+                </button>
+              )}
+              <button onClick={geo.clearError} aria-label="Dismiss error">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -285,6 +287,7 @@ function MapPageInner() {
               centre={centre}
               zoom={mapZoom}
               userLocation={geo.coords}
+              userAccuracy={geo.coords?.accuracy}
               selectedId={selectedId}
               onSelectProperty={handleSelectProperty}
               onIdle={handleMapIdle}
@@ -311,6 +314,21 @@ function MapPageInner() {
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-white border border-[#EBEBEB] rounded-full px-3 py-1.5 flex items-center gap-2 shadow text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
                 Updating…
+              </div>
+            )}
+
+            {/* GPS accuracy chip — visible whenever a location fix exists */}
+            {geo.coords && (
+              <div
+                className="absolute bottom-4 left-4 z-20 bg-white border border-[#EBEBEB] rounded-full px-3 py-1.5 flex items-center gap-1.5 shadow text-xs"
+                role="status"
+                aria-label={`Location accuracy: ${formatAccuracy(geo.coords.accuracy)}`}
+              >
+                <Navigation className="h-3.5 w-3.5 text-[#2563EB]" />
+                <span className="font-semibold text-foreground">
+                  {formatAccuracy(geo.coords.accuracy)}
+                </span>
+                <span className="text-muted-foreground">accuracy</span>
               </div>
             )}
           </div>

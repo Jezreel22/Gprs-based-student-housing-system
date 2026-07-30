@@ -210,6 +210,9 @@ importers:
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6
+      '@types/geojson':
+        specifier: ^7946.0.16
+        version: 7946.0.16
       '@types/google.maps':
         specifier: 3.65.2
         version: 3.65.2
@@ -2300,6 +2303,9 @@ packages:
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
+
+  '@types/geojson@7946.0.16':
+    resolution: {integrity: sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==}
 
   '@types/google.maps@3.65.2':
     resolution: {integrity: sha512-e52bmOhGCQSNabFpL48iQlwJybq6rfns8NUVJ20MR7CdPlHQ2RmSCnPbJfrUYJfogrE4OiHQTZ4LXpop+eer1w==}
@@ -5401,6 +5407,8 @@ snapshots:
   '@types/d3-timer@3.0.2': {}
 
   '@types/estree@1.0.9': {}
+
+  '@types/geojson@7946.0.16': {}
 
   '@types/google.maps@3.65.2': {}
 
