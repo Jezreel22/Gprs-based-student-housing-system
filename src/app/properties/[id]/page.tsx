@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { pickListingPhotos } from "@/lib/listing-photos";
 import PropertyMap from "@/components/maps/PropertyMap";
+import NearbyAmenitiesCard from "@/components/maps/NearbyAmenitiesCard";
 import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useTravelTime } from "@/hooks/use-travel-time";
@@ -480,6 +481,11 @@ export default function PropertyDetail() {
                 </div>
               )}
             </div>
+
+            {/* What's nearby — loaded on demand, cached for 1h (server + client). */}
+            {property.latitude && property.longitude && (
+              <NearbyAmenitiesCard propertyId={params.id} />
+            )}
 
             {/* Distances — four numbers (distance from NAUB, from you, walk
                 time, drive time). Walks/drives use the server travel-time
