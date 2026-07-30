@@ -11,6 +11,7 @@ import { log } from "@/lib/log";
  * `type` is a free-form string — convention used in the app:
  *   "message"         — incoming message (relatedId = message id, relatedType = "message")
  *   "login"           — account sign-in (no relatedId)
+ *   "booking"         — student reserved the landlord's property (relatedId = booking id)
  *   "escrow_funded"   — funds landed in escrow; fired once per booking (relatedId = booking id)
  *   "escrow_release"  — escrow released to landlord (relatedId = booking id)
  *   "payment"         — payment-confirmed reminder to the student (relatedId = booking id)
@@ -19,6 +20,7 @@ import { log } from "@/lib/log";
 export type NotificationType =
   | "message"
   | "login"
+  | "booking"
   | "escrow_release"
   | "escrow_funded"
   | "payment"
@@ -123,4 +125,31 @@ export async function notifyEscrowFunded(args: {
       }),
     ),
   ]);
+}
+
+/**
+ * Notify the landlord that a student has reserved their property. Fires on
+ * booking creation — before payment — so the landlord learns of the interest
+ * immediately (the `escrow_funded` fan-out covers the later paid state).
+ *
+ * Best-effort: `createNotification` swallows insert errors, so a failure here
+ * can never regress the booking the caller just created.
+ */
+export async function notifyBookingCreated(args: {
+  bookingId: string;
+  landlordId: string;
+  studentName: string;
+  totalAmountNgn?: number | null;
+  propertyAddress?: string | null;
+}): Promise<void> {
+  const amount = args.totalAmountNgn ? ` for ${formatNGN(args.totalAmountNgn)}` : "";
+  const where = args.propertyAddress ? ` ${args.propertyAddress}` : "";
+  await createNotification({
+    userId: args.landlordId,
+    type: "booking",
+    title: "New booking request",
+    body: `${args.studentName} requested to book${where}${amount}.`,
+    relatedId: args.bookingId,
+    relatedType: "booking",
+  });
 }

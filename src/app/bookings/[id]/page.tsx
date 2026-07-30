@@ -9,6 +9,7 @@ import {
   useCreateBooking, useConfirmOccupancy, useFileDispute, useCreateRating,
   useCreatePropertyRating,
 } from "@/api";
+import { customFetch } from "@/api/custom-fetch";
 import { initializePayment, verifyPayment } from "@/lib/payment-client";
 import { payWithPaystack, PAYSTACK_CLOSED } from "@/lib/paystack-inline";
 import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
@@ -20,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2, MessageSquare, Banknote, Home, Receipt, Ban } from "lucide-react";
+import { ChevronLeft, Lock, MapPin, CheckCircle, AlertCircle, Star, Shield, CreditCard, Loader2, MessageSquare, Banknote, Home, Receipt, Ban, ExternalLink } from "lucide-react";
 
 function formatNGN(n?: number | null) {
   return n ? `₦${n.toLocaleString("en-NG")}` : "₦—";
@@ -35,6 +36,16 @@ const BOOKING_STATUS_CONFIG: Record<string, { label: string; color: string; desc
   completed: { label: "Completed", color: "#34A853", desc: "This booking is complete. Escrow has been released." },
   cancelled: { label: "Cancelled", color: "#717171", desc: "This booking was cancelled." },
   disputed: { label: "Disputed", color: "#E1444A", desc: "A dispute is under investigation by our Escrow Officer." },
+};
+
+// Human-readable labels for dispute reasons (mirrors the options in the
+// dispute form below). Used by the disputed-status card.
+const DISPUTE_REASON_LABELS: Record<string, string> = {
+  property_mismatch: "Property doesn't match listing",
+  occupancy_not_verified: "Cannot verify occupancy",
+  unresponsive: "Landlord is unresponsive",
+  safety_concern: "Safety concerns",
+  other: "Other",
 };
 
 // Translate a raw Paystack error into a student/landlord-safe message.
@@ -101,6 +112,17 @@ function BookingPage() {
     enabled: !!bookingId,
   });
 
+  // The booking detail API only carries dispute_status, not the reason or
+  // description — fetch the dispute itself so a `disputed` booking can show
+  // what was filed. Only runs while disputed; /api/disputes is scoped to the
+  // viewer's own disputes, so both parties to the booking can see it.
+  const { data: dispute } = useQuery({
+    queryKey: ["dispute", bookingId],
+    queryFn: () => customFetch<any[]>("/api/disputes"),
+    enabled: !!bookingId && (booking as any)?.booking_status === "disputed",
+    select: (rows) => rows.find((d: any) => d.booking_id === bookingId) ?? null,
+  });
+
   // Poll while in release_pending so the student sees live completion as soon as
   // the officer marks disbursed (managed mode) or the Paystack webhook fires
   // (transfer mode). The effect stops itself automatically once the status
@@ -154,6 +176,21 @@ function BookingPage() {
       { onSettled: () => setCancellingBooking(false) },
     );
   };
+
+  // ?dispute=1 — set by the "Dispute" shortcut on the My Bookings page — lands
+  // here with the dispute form already open. Guarded on eligibility so a stale
+  // or hand-typed link can't force the form on a non-disputable booking.
+  const openDispute = searchParams.get("dispute") === "1";
+  useEffect(() => {
+    if (
+      openDispute &&
+      booking &&
+      user?.role === "student" &&
+      ["pending_occupancy", "pending_review"].includes((booking as any).booking_status)
+    ) {
+      setShowDispute(true);
+    }
+  }, [openDispute, booking, user]);
 
   useEffect(() => {
     // Wait for the localStorage read to complete before deciding to redirect.
@@ -585,6 +622,37 @@ function BookingPage() {
           </div>
         </div>
 
+        {/* DISPUTED: show what was filed. Visible to both parties — /api/disputes
+            scopes to the viewer's own disputes, and both are parties here. */}
+        {b.booking_status === "disputed" && (
+          <div className="rounded-2xl border p-5 mb-5" style={{ background: "#E1444A0D", borderColor: "#E1444A40" }}>
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="h-5 w-5 shrink-0" style={{ color: "#E1444A" }} />
+              <h2 className="font-semibold" style={{ color: "#E1444A" }}>Dispute under investigation</h2>
+            </div>
+            {dispute ? (
+              <div className="text-sm space-y-2">
+                <div>
+                  <span className="text-muted-foreground">Reason: </span>
+                  <span className="font-medium">{DISPUTE_REASON_LABELS[dispute.reason] ?? dispute.reason}</span>
+                </div>
+                {dispute.description && (
+                  <p className="text-muted-foreground whitespace-pre-wrap">{dispute.description}</p>
+                )}
+                {dispute.adjudication_notes && (
+                  <div className="rounded-lg bg-white border border-[#EBEBEB] p-3 text-xs">
+                    <span className="font-semibold">Officer notes: </span>{dispute.adjudication_notes}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Our Escrow Officer is reviewing this booking. Funds won't move until it's resolved.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* LANDLORD: share the occupancy code with the student. Only shown to
             the landlord (server gates the code per caller role) and only while
             there's still something for the student to confirm. */}
@@ -636,6 +704,26 @@ function BookingPage() {
               <span>Payment method</span>
               <span className="capitalize">{b.payment_method?.replace("_", " ")}</span>
             </div>
+            {/* Official escrow receipts: the student's deposit receipt exists
+                once paid; the landlord's release receipt exists once the payout
+                settles. /transactions is role-scoped, so each party lands on
+                their own ledger with the newest receipt at the top. */}
+            {isStudent && ["pending_occupancy", "pending_review", "release_pending", "release_failed", "completed"].includes(b.booking_status) && (
+              <Link href="/transactions" className="flex items-center justify-between rounded-lg border border-[#EBEBEB] px-3 py-2.5 hover:bg-[#FAFAFA] transition-colors">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Receipt className="h-4 w-4 text-primary" /> View payment receipt
+                </span>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+              </Link>
+            )}
+            {isLandlord && b.booking_status === "completed" && b.escrow_released_at && (
+              <Link href="/transactions" className="flex items-center justify-between rounded-lg border border-[#EBEBEB] px-3 py-2.5 hover:bg-[#FAFAFA] transition-colors">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Receipt className="h-4 w-4 text-primary" /> View payout receipt
+                </span>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+              </Link>
+            )}
             {b.escrow_released_at && (
               <div className="flex justify-between text-xs text-green-600 font-medium">
                 <span>Escrow released</span>
@@ -752,15 +840,32 @@ function BookingPage() {
           </div>
         )}
 
-        {/* DISPUTE */}
+        {/* DISPUTE — prominent card (was a buried text link). Kept visually
+            subordinate to the primary escrow CTA: plain border, destructive
+            outline button rather than the solid #FF5A5F primary. */}
         {isStudent && ["pending_occupancy", "pending_review"].includes(b.booking_status) && !showDispute && (
-          <div className="mb-5">
-            <button
-              className="text-sm text-muted-foreground hover:text-destructive transition-colors underline-offset-2 hover:underline"
+          <div className="bg-white rounded-2xl border border-[#EBEBEB] p-4 mb-5 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="h-9 w-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "#FEE2E2" }}>
+                <AlertCircle className="h-4 w-4" style={{ color: "#E1444A" }} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Problem with the property?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  File a dispute and our Escrow Officer will review it within 5 business days.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1"
+              style={{ borderColor: "#FCA5A5", color: "#B91C1C" }}
               onClick={() => setShowDispute(true)}
             >
-              Problem with the property? File a dispute
-            </button>
+              <AlertCircle className="h-3.5 w-3.5" />
+              File dispute
+            </Button>
           </div>
         )}
 

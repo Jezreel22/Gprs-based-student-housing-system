@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ChevronLeft, ArrowRight, CreditCard, MessageSquare, Lock,
-  ShoppingBag, CheckCircle, XCircle, Clock, Receipt, Ban
+  ShoppingBag, CheckCircle, XCircle, Clock, Receipt, Ban, AlertCircle
 } from "lucide-react";
 import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 import { useCancelBooking } from "@/hooks/use-cancel-booking";
@@ -121,6 +121,20 @@ function BookingRow({ b, user }: { b: any; user: StoredUser }) {
           <Link href={`/bookings/${b.id}`} className="flex-1 sm:flex-none">
             <Button size="sm" className="w-full gap-1" style={{ background: "#FF5A5F", color: "#fff", border: "none" }}>
               <Lock className="h-3.5 w-3.5" /> Release payment
+            </Button>
+          </Link>
+        )}
+        {/* Dispute shortcut — only while the booking is disputable (pre-release).
+            ?dispute=1 opens the dispute form on the booking detail page. */}
+        {isStudent && ["pending_occupancy", "pending_review"].includes(b.booking_status) && (
+          <Link href={`/bookings/${b.id}?dispute=1`} className="flex-1 sm:flex-none">
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full gap-1 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+              title="Report a problem with this booking"
+            >
+              <AlertCircle className="h-3.5 w-3.5" /> Dispute
             </Button>
           </Link>
         )}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, MessageSquare, ShieldCheck, Wallet, LogIn, AlertCircle } from "lucide-react";
+import { Bell, MessageSquare, ShieldCheck, Wallet, LogIn, AlertCircle, Home } from "lucide-react";
 import { customFetch } from "@/api/custom-fetch";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -33,6 +33,7 @@ function IconForType({ type, className }: { type: string; className?: string }) 
     type === "escrow_release" ? Wallet :
     type === "login"          ? LogIn :
     type === "payment"        ? ShieldCheck :
+    type === "booking"        ? Home :
                                 AlertCircle;
   return <I className={className} />;
 }

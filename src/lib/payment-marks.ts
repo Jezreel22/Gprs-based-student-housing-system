@@ -88,6 +88,32 @@ export async function completeBookingPayout(args: {
     reason: "Booking completed",
   });
 
+  // Tell both parties the cycle closed — mirrors the managed-disbursement
+  // notifications in markBookingDisbursed so the landlord learns their payout
+  // landed regardless of which path (Paystack transfer vs. officer-confirmed
+  // manual transfer) settled it. Exactly-once via the release_pending guard
+  // above; best-effort so a notify hiccup never regresses the payout.
+  try {
+    await createNotification({
+      userId: booking.landlord_id,
+      type: "escrow_release",
+      title: "Payout sent",
+      body: "Your escrow payout has been sent to your bank account.",
+      relatedId: booking.id,
+      relatedType: "booking",
+    });
+    await createNotification({
+      userId: booking.student_id,
+      type: "escrow_release",
+      title: "Escrow paid out",
+      body: `Your landlord has been paid for booking ${booking.id.slice(0, 8)}. The transfer has been confirmed by the platform.`,
+      relatedId: booking.id,
+      relatedType: "booking",
+    });
+  } catch {
+    // Swallow — never regress the completed transition on a notify hiccup.
+  }
+
   return true;
 }
 

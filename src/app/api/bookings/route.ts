@@ -4,6 +4,7 @@ import { eq, or, desc, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bookingsTable, propertiesTable, usersTable } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/auth";
+import { notifyBookingCreated } from "@/lib/notify";
 import { handleError, parseBody, jsonResponse, errorResponse } from "@/lib/api";
 import type { BookingDetail, LandlordSummary } from "@/api/generated/api.schemas";
 
@@ -133,6 +134,21 @@ export async function POST(req: NextRequest) {
       funds_received_at: body.payment_method === "bank_transfer" ? new Date() : null,
       booking_status: body.payment_method === "bank_transfer" ? "pending_occupancy" : "pending_payment",
     }).returning();
+
+    // Best-effort: tell the landlord a student just reserved their property.
+    // Fired pre-payment (the escrow_funded fan-out covers the paid state later).
+    // Never regresses the 201 on a notify failure.
+    try {
+      await notifyBookingCreated({
+        bookingId: booking.id,
+        landlordId: property.landlord_id,
+        studentName: `${me.first_name ?? ""} ${me.last_name ?? ""}`.trim() || "A student",
+        totalAmountNgn: total,
+        propertyAddress: property.address,
+      });
+    } catch {
+      // swallow — notification failures must not break booking creation
+    }
 
     return jsonResponse(booking, { status: 201 });
   } catch (err) {

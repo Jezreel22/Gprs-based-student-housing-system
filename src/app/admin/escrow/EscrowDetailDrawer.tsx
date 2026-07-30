@@ -448,11 +448,15 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
 
       {/* Disburse confirmation modal */}
       <Dialog open={disburseOpen} onOpenChange={(o) => { if (!disburseBusy) setDisburseOpen(o); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm disbursement</DialogTitle>
-          </DialogHeader>
-          <div className="py-2 space-y-3">
+        <DialogContent className="max-h-[88dvh] overflow-hidden flex flex-col gap-0 p-0">
+          <div className="px-6 pt-6 shrink-0">
+            <DialogHeader>
+              <DialogTitle>Confirm disbursement</DialogTitle>
+            </DialogHeader>
+          </div>
+          {/* Scroll region: keeps the footer buttons pinned below no matter how
+              tall the summary + receipt preview stack gets. */}
+          <div className="px-6 pb-4 pt-2 overflow-y-auto flex-1 space-y-3">
             <div className="grid grid-cols-2 gap-3 text-sm bg-[#FAFAFA] border border-[#EBEBEB] rounded-lg p-3">
               <div className="col-span-2">
                 <div className="text-xs text-muted-foreground">Property</div>
@@ -502,7 +506,7 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
                 <img
                   src={receiptPreviewUrl}
                   alt="Receipt preview"
-                  className="mt-2 max-h-40 rounded-md border border-[#EBEBEB] object-contain bg-white"
+                  className="mt-2 max-h-32 max-w-full rounded-md border border-[#EBEBEB] object-contain bg-white"
                 />
               )}
               <p className="text-xs text-muted-foreground">
@@ -522,16 +526,18 @@ export function EscrowDetailDrawer({ bookingId, onClose, onMutated }: Props) {
               </span>
             </label>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" disabled={disburseBusy} onClick={() => setDisburseOpen(false)}>Cancel</Button>
-            <Button
-              style={{ background: "#16A34A", color: "#fff", border: "none" }}
-              disabled={disburseBusy || !disburseAgree || !disburseReceipt}
-              onClick={submitDisburse}
-            >
-              {disburseBusy ? "Disbursing…" : "Confirm disbursement"}
-            </Button>
-          </DialogFooter>
+          <div className="px-6 py-4 border-t border-[#EBEBEB] shrink-0 bg-background">
+            <DialogFooter className="gap-2">
+              <Button variant="outline" disabled={disburseBusy} onClick={() => setDisburseOpen(false)}>Cancel</Button>
+              <Button
+                style={{ background: "#16A34A", color: "#fff", border: "none" }}
+                disabled={disburseBusy || !disburseAgree || !disburseReceipt}
+                onClick={submitDisburse}
+              >
+                {disburseBusy ? "Disbursing…" : "Confirm disbursement"}
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </>
