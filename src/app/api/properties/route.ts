@@ -9,6 +9,7 @@ import { logFromRequest } from "@/lib/log";
 import { formatTrustScore } from "@/lib/format";
 import { TRUST_BASELINE } from "@/lib/trust/levels";
 import { haversineDistanceSql, NAUB_LAT, NAUB_LNG } from "@/lib/maps/geo-sql";
+import { computeProximityScore } from "@/lib/maps/proximity-score";
 import type { PropertyListResponse, PropertySummary } from "@/api/generated/api.schemas";
 
 const GetPropertiesQuery = z.object({
@@ -24,7 +25,7 @@ const GetPropertiesQuery = z.object({
   furnished: z.coerce.boolean().optional(),
   trust_score_min: z.coerce.number().int().min(0).max(100).optional(),
   landlord_type: z.enum(["landlord", "agent"]).optional(),
-  sort: z.enum(["newest", "cheapest", "most_trusted"]).optional(),
+  sort: z.enum(["newest", "cheapest", "most_trusted", "campus_proximity"]).optional(),
   page: z.coerce.number().int().positive().optional(),
   page_size: z.coerce.number().int().positive().max(50).optional(),
 });
@@ -108,10 +109,29 @@ export async function GET(req: NextRequest) {
     // `most_trusted` ordering pulls sorted rows directly from a LEFT JOIN to
     // trust_scores so it's correct at query time, not relying on the in-app
     // TODO fallback. Other sorts keep their existing behaviour.
+    //
+    // The NAUB distance expression is shared between the SELECT (so every row
+    // carries distance_from_naub_km) and the ORDER BY (campus_proximity sort).
+    const naubDistanceSql = haversineDistanceSql(
+      propertiesTable.latitude,
+      propertiesTable.longitude,
+      NAUB_LAT,
+      NAUB_LNG
+    );
+
     let orderBy: SQL;
     if (q.sort === "cheapest") orderBy = asc(propertiesTable.rent_amount_ngn);
     else if (q.sort === "most_trusted") {
       orderBy = sql`COALESCE(${trustScoresTable.total_score}, ${TRUST_BASELINE}) DESC, ${propertiesTable.created_at} DESC`;
+    } else if (q.sort === "campus_proximity") {
+      // Distance is the dominant proximity-score component (35 of 95 pts) and
+      // is monotonic with the score's largest term, so sorting by it keeps
+      // pagination server-correct. Verified-landlord and rating act as
+      // tiebreakers — the same priority order as the score's smaller terms.
+      // NULLS LAST pushes unpinned listings to the end.
+      orderBy = sql`${naubDistanceSql} ASC NULLS LAST,
+        CASE WHEN ${usersTable.verification_status} = 'verified' THEN 0 ELSE 1 END,
+        COALESCE(${trustScoresTable.average_rating}, 0) DESC`;
     } else {
       orderBy = desc(propertiesTable.created_at);
     }
@@ -157,14 +177,9 @@ export async function GET(req: NextRequest) {
         },
         trust: trustScoresTable,
         // Distance from the NAUB campus for every listing — drives the
-        // "X km from NAUB · ~N min walk" line on property cards. NULL when the
-        // listing has no coordinates (card hides the line).
-        distance_from_naub_km: haversineDistanceSql(
-          propertiesTable.latitude,
-          propertiesTable.longitude,
-          NAUB_LAT,
-          NAUB_LNG
-        ),
+        // "X km from NAUB · ~N min walk" line on property cards and the
+        // proximity score. NULL when the listing has no coordinates.
+        distance_from_naub_km: naubDistanceSql,
         // Fold the hero photo into the same round-trip as a correlated
         // subquery (LATERAL-free, runs against the outer `properties` row).
         // This removes the second DB round-trip the Supabase pooler makes
@@ -223,6 +238,17 @@ export async function GET(req: NextRequest) {
       // shape matches the previous behaviour (`landlord: undefined` instead of
       // `landlord: { id: null, ... }`).
       const hasLandlord = l && l.id != null;
+      // Campus proximity score — computed server-side from the same pure
+      // module the detail page uses, so every surface shows the same number.
+      const distKm = p.latitude != null && p.longitude != null
+        ? Number(row.distance_from_naub_km.toFixed(3))
+        : null;
+      const proximity = computeProximityScore({
+        distanceFromNaubKm: distKm,
+        gpsVerified: p.geolocation_verified_at != null,
+        landlordVerified: hasLandlord ? l.verification_status === "verified" : false,
+        averageRating: ts?.average_rating ?? null,
+      });
       return {
         id: p.id,
         address: p.address,
@@ -240,10 +266,10 @@ export async function GET(req: NextRequest) {
         // uses for property_rating_average.
         latitude: p.latitude ?? undefined,
         longitude: p.longitude ?? undefined,
-        distance_from_naub_km:
-          p.latitude != null && p.longitude != null
-            ? Number(row.distance_from_naub_km.toFixed(3))
-            : undefined,
+        distance_from_naub_km: distKm ?? undefined,
+        geolocation_verified_at: p.geolocation_verified_at?.toISOString() ?? null,
+        proximity_score: proximity.score,
+        proximity_classification: proximity.classification,
         landlord: hasLandlord ? {
           id: l.id,
           first_name: l.first_name,

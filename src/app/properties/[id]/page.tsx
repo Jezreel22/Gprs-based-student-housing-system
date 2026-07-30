@@ -22,6 +22,7 @@ import { useTravelTime } from "@/hooks/use-travel-time";
 import { NAUB_COORDS } from "@/lib/maps/constants";
 import { haversineKm, formatDistance } from "@/lib/maps/utils";
 import { estimateWalkMinutes, estimateDriveMinutes, formatDuration } from "@/lib/maps/travel";
+import { computeProximityScore, PROXIMITY_CLASSIFICATIONS } from "@/lib/maps/proximity-score";
 import { Heart } from "lucide-react";
 import {
   Bed, MapPin, Wifi, Zap, Droplets, Shield, Car, ChefHat,
@@ -487,7 +488,31 @@ export default function PropertyDetail() {
             {propertyCoord && (
               <div className="bg-white rounded-2xl p-6 border border-[#EBEBEB]">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-base font-bold text-foreground">Distances</h2>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base font-bold text-foreground">Distances</h2>
+                    {/* Campus proximity badge — computed client-side from the
+                        same pure module the APIs use, so the number matches
+                        the cards exactly. */}
+                    {(() => {
+                      const prox = computeProximityScore({
+                        distanceFromNaubKm: distanceFromNaubKm,
+                        gpsVerified: !!property.geolocation_verified_at,
+                        landlordVerified: property.landlord?.verification_status === "verified",
+                        averageRating: propertyRatingAverage > 0 ? propertyRatingAverage : null,
+                      });
+                      const cls = PROXIMITY_CLASSIFICATIONS[prox.classification];
+                      return (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold leading-none"
+                          style={{ background: cls.bg, color: cls.color }}
+                          title={`Campus proximity: ${prox.score}/100 (${cls.label})`}
+                        >
+                          <MapPin className="h-3 w-3" />
+                          {prox.score}/100 · {cls.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   {!userLoc.coords && !userLoc.isLoading && !userLoc.error && (
                     <Button
                       size="sm"

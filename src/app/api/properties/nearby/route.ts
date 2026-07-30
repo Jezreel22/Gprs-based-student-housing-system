@@ -12,6 +12,7 @@ import { handleError, jsonResponse, getQueryParams } from "@/lib/api";
 import { formatTrustScore } from "@/lib/format";
 import { TRUST_BASELINE } from "@/lib/trust/levels";
 import { haversineDistanceSql, NAUB_LAT, NAUB_LNG } from "@/lib/maps/geo-sql";
+import { computeProximityScore } from "@/lib/maps/proximity-score";
 
 // ─── Query schema ─────────────────────────────────────────────────────────
 const NearbyQuery = z.object({
@@ -55,6 +56,9 @@ export type NearbyProperty = {
   trust_score: number;
   distance_from_centre_km: number;
   distance_from_naub_km: number;
+  geolocation_verified_at: string | null;
+  proximity_score: number;
+  proximity_classification: "excellent" | "good" | "average" | "poor";
   landlord: {
     id: string;
     first_name: string | null;
@@ -224,6 +228,13 @@ export async function GET(req: NextRequest) {
         const l = landlordMap.get(p.landlord_id) ?? null;
         const ts = trustMap.get(p.landlord_id);
         const hero = (photoByProp.get(p.id) ?? [])[0];
+        const naubKm = Number(distance_from_naub_km.toFixed(3));
+        const proximity = computeProximityScore({
+          distanceFromNaubKm: naubKm,
+          gpsVerified: p.geolocation_verified_at != null,
+          landlordVerified: l?.verification_status === "verified",
+          averageRating: ts?.average_rating ?? null,
+        });
         return {
           id: p.id,
           address: p.address,
@@ -238,7 +249,10 @@ export async function GET(req: NextRequest) {
           created_at: p.created_at?.toISOString() ?? null,
           trust_score: formatTrustScore(ts)?.total_score ?? TRUST_BASELINE,
           distance_from_centre_km: Number(distance_km.toFixed(3)),
-          distance_from_naub_km: Number(distance_from_naub_km.toFixed(3)),
+          distance_from_naub_km: naubKm,
+          geolocation_verified_at: p.geolocation_verified_at?.toISOString() ?? null,
+          proximity_score: proximity.score,
+          proximity_classification: proximity.classification,
           landlord: l
             ? {
                 id: l.id,

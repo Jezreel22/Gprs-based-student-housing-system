@@ -4,17 +4,21 @@
  */
 
 import type { PropertySummary } from "@/api/generated/api.schemas";
+import type { ProximityClassification } from "@/lib/maps/proximity-score";
 
 /**
- * A PropertySummary with the three location fields GET /api/properties now
- * includes for listings that have coordinates. The fields are optional so a
- * plain PropertySummary (e.g. from /api/me/favorites, which doesn't include
- * them) is still assignable and the card simply hides its distance line.
+ * A PropertySummary with the location fields GET /api/properties now includes
+ * for listings that have coordinates. The fields are optional so a plain
+ * PropertySummary (e.g. from /api/me/favorites, which doesn't include them) is
+ * still assignable and the card simply hides its distance line.
  */
 export type PropertySummaryWithLocation = PropertySummary & {
   latitude?: number | null;
   longitude?: number | null;
   distance_from_naub_km?: number | null;
+  geolocation_verified_at?: string | null;
+  proximity_score?: number;
+  proximity_classification?: ProximityClassification;
 };
 
 export interface NearbyPropertyLandlord {
@@ -41,6 +45,9 @@ export interface NearbyProperty {
   trust_score: number;
   distance_from_centre_km: number;
   distance_from_naub_km: number;
+  geolocation_verified_at: string | null;
+  proximity_score: number;
+  proximity_classification: ProximityClassification;
   landlord: NearbyPropertyLandlord | null;
 }
 

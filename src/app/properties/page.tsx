@@ -76,6 +76,7 @@ function PropertiesPage() {
                 <SelectItem value="newest">Newest first</SelectItem>
                 <SelectItem value="cheapest">Cheapest first</SelectItem>
                 <SelectItem value="most_trusted">Most trusted</SelectItem>
+                <SelectItem value="campus_proximity">Nearest to NAUB</SelectItem>
               </SelectContent>
             </Select>
 
