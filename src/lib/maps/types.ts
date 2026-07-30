@@ -3,6 +3,20 @@
  * Mirrors the NearbyProperty shape returned by GET /api/properties/nearby.
  */
 
+import type { PropertySummary } from "@/api/generated/api.schemas";
+
+/**
+ * A PropertySummary with the three location fields GET /api/properties now
+ * includes for listings that have coordinates. The fields are optional so a
+ * plain PropertySummary (e.g. from /api/me/favorites, which doesn't include
+ * them) is still assignable and the card simply hides its distance line.
+ */
+export type PropertySummaryWithLocation = PropertySummary & {
+  latitude?: number | null;
+  longitude?: number | null;
+  distance_from_naub_km?: number | null;
+};
+
 export interface NearbyPropertyLandlord {
   id: string;
   first_name: string | null;

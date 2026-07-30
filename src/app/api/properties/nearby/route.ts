@@ -11,32 +11,7 @@ import {
 import { handleError, jsonResponse, getQueryParams } from "@/lib/api";
 import { formatTrustScore } from "@/lib/format";
 import { TRUST_BASELINE } from "@/lib/trust/levels";
-
-// ─── Nigerian Army University Biu — default map centre ────────────────────
-export const NAUB_LAT = 10.6102;
-export const NAUB_LNG = 12.1978;
-
-// ─── Haversine distance formula in PostgreSQL (returns km) ────────────────
-// Uses the spherical law of cosines: accurate to within ~1 m for these scales.
-// The literal 6371 is the mean Earth radius in kilometres.
-function haversineDistanceSql(
-  latCol: typeof propertiesTable.latitude,
-  lngCol: typeof propertiesTable.longitude,
-  refLat: number,
-  refLng: number
-): SQL<number> {
-  return sql<number>`(
-    6371 * acos(
-      LEAST(1.0, GREATEST(-1.0,
-        cos(radians(${refLat})) *
-        cos(radians(${latCol})) *
-        cos(radians(${lngCol}) - radians(${refLng})) +
-        sin(radians(${refLat})) *
-        sin(radians(${latCol}))
-      ))
-    )
-  )`;
-}
+import { haversineDistanceSql, NAUB_LAT, NAUB_LNG } from "@/lib/maps/geo-sql";
 
 // ─── Query schema ─────────────────────────────────────────────────────────
 const NearbyQuery = z.object({

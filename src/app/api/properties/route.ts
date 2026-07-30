@@ -8,6 +8,7 @@ import { handleError, parseBody, jsonResponse, getQueryParams, errorResponse } f
 import { logFromRequest } from "@/lib/log";
 import { formatTrustScore } from "@/lib/format";
 import { TRUST_BASELINE } from "@/lib/trust/levels";
+import { haversineDistanceSql, NAUB_LAT, NAUB_LNG } from "@/lib/maps/geo-sql";
 import type { PropertyListResponse, PropertySummary } from "@/api/generated/api.schemas";
 
 const GetPropertiesQuery = z.object({
@@ -155,6 +156,15 @@ export async function GET(req: NextRequest) {
           verification_status: usersTable.verification_status,
         },
         trust: trustScoresTable,
+        // Distance from the NAUB campus for every listing — drives the
+        // "X km from NAUB · ~N min walk" line on property cards. NULL when the
+        // listing has no coordinates (card hides the line).
+        distance_from_naub_km: haversineDistanceSql(
+          propertiesTable.latitude,
+          propertiesTable.longitude,
+          NAUB_LAT,
+          NAUB_LNG
+        ),
         // Fold the hero photo into the same round-trip as a correlated
         // subquery (LATERAL-free, runs against the outer `properties` row).
         // This removes the second DB round-trip the Supabase pooler makes
@@ -223,6 +233,17 @@ export async function GET(req: NextRequest) {
         hero_photo_url: hero,
         amenities: p.amenities ?? {},
         created_at: p.created_at?.toISOString() ?? null,
+        // Location for cards: coordinates + distance from NAUB. Undefined when
+        // the listing has none (card hides the distance line). These three
+        // fields aren't on the generated PropertySummary schema yet, so the
+        // object is widened via the cast below — same pattern the detail route
+        // uses for property_rating_average.
+        latitude: p.latitude ?? undefined,
+        longitude: p.longitude ?? undefined,
+        distance_from_naub_km:
+          p.latitude != null && p.longitude != null
+            ? Number(row.distance_from_naub_km.toFixed(3))
+            : undefined,
         landlord: hasLandlord ? {
           id: l.id,
           first_name: l.first_name,
@@ -232,7 +253,7 @@ export async function GET(req: NextRequest) {
           average_rating: ts?.average_rating ?? null,
         } : undefined,
         trust_score: formatTrustScore(ts)?.total_score ?? 0,
-      };
+      } as PropertySummary;
     });
 
     const response: PropertyListResponse = { data, total, page, page_size: pageSize };

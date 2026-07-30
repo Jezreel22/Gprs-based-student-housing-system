@@ -3,12 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Star, Heart } from "lucide-react";
+import { Star, Heart, MapPin, Footprints } from "lucide-react";
 import type { PropertySummary } from "@/api";
 import { trustLevelForScore, trustLevelLabel } from "@/lib/trust/levels";
 import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 import { TRUST_LEVEL_STYLES } from "./trust-level-styles";
 import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
+import type { PropertySummaryWithLocation } from "@/lib/maps/types";
+import { formatDistance } from "@/lib/maps/utils";
+import { estimateWalkMinutes, formatDuration } from "@/lib/maps/travel";
 
 interface PropertyCardProps {
   property: PropertySummary;
@@ -30,6 +33,11 @@ function getPhotoUrl(property: PropertySummary) {
 
 export default function PropertyCard({ property }: PropertyCardProps) {
   const landlord = property.landlord;
+  const p = property as PropertySummaryWithLocation;
+  // Distance + walk-time line — only when the listing has coordinates and a
+  // computed NAUB distance (no API call; pure heuristic estimate).
+  const distanceKm = p.distance_from_naub_km;
+  const hasDistance = distanceKm != null && distanceKm > 0;
   const trustScore = property.trust_score ?? 0;
   const trustLevel = trustLevelForScore(trustScore);
   // Only the two "trust-positive" levels earn a visible badge — a "Low Trust"
@@ -119,6 +127,22 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             {property.rooms ?? 1} {(property.rooms ?? 1) === 1 ? "room" : "rooms"}
             {trustHighlight && verified ? " · Trusted landlord" : verified ? " · Verified landlord" : ""}
           </p>
+
+          {/* Distance from NAUB campus + walking estimate. Hidden when the
+              listing has no coordinates (e.g. favorites payload) — no API call,
+              just a straight-line heuristic. */}
+          {hasDistance && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-1 flex items-center gap-2">
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3 w-3 shrink-0" />
+                {formatDistance(distanceKm)}
+              </span>
+              <span className="flex items-center gap-1">
+                <Footprints className="h-3 w-3 shrink-0" />
+                ~{formatDuration(estimateWalkMinutes(distanceKm))} walk
+              </span>
+            </p>
+          )}
 
           {/* Trust score row — "84/100" next to the price line. Always shown so
               students can gauge reliability even on listings that don't earn

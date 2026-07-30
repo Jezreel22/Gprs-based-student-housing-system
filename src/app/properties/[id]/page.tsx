@@ -17,12 +17,17 @@ import { useToast } from "@/hooks/use-toast";
 import { pickListingPhotos } from "@/lib/listing-photos";
 import PropertyMap from "@/components/maps/PropertyMap";
 import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
+import { useGeolocation } from "@/hooks/use-geolocation";
+import { useTravelTime } from "@/hooks/use-travel-time";
+import { NAUB_COORDS } from "@/lib/maps/constants";
+import { haversineKm, formatDistance } from "@/lib/maps/utils";
+import { estimateWalkMinutes, estimateDriveMinutes, formatDuration } from "@/lib/maps/travel";
 import { Heart } from "lucide-react";
 import {
   Bed, MapPin, Wifi, Zap, Droplets, Shield, Car, ChefHat,
   Star, ShieldCheck, ShieldAlert, MessageSquare, ChevronLeft, ChevronRight,
   FileCheck, Images, Lock, BadgeCheck, Phone, ExternalLink, Calendar,
-  Home, CheckCircle2, Building2
+  Home, CheckCircle2, Building2, Footprints, Loader2, Navigation
 } from "lucide-react";
 
 const AMENITY_MAP: Record<string, { label: string; Icon: React.ElementType }> = {
@@ -113,6 +118,37 @@ export default function PropertyDetail() {
     }
     toggleFavoriteMutation.mutate({ propertyId: params.id, favorite: !isFavorite });
   };
+
+  // Distance + travel-time state. The student's GPS fix (if shared) feeds
+  // both the walking/driving heuristic and the precise Mapbox Directions calls
+  // (server-cached). All values are derived from the property's coords + a
+  // reference point — no extra API fields needed.
+  const userLoc = useGeolocation();
+  const propertyLat = property?.latitude ?? null;
+  const propertyLng = property?.longitude ?? null;
+  const propertyCoord = propertyLat != null && propertyLng != null
+    ? { lat: propertyLat, lng: propertyLng }
+    : null;
+  // NAUB distance — pure client-side haversine against the shared constant.
+  const distanceFromNaubKm = propertyCoord
+    ? haversineKm(NAUB_COORDS, propertyCoord)
+    : null;
+  // Distance from the student when they've shared their location.
+  const distanceFromUserKm =
+    userLoc.coords && propertyCoord
+      ? haversineKm(userLoc.coords, propertyCoord)
+      : null;
+  // Precise Mapbox durations — only fetched when both points are known.
+  const walkUser = useTravelTime(
+    userLoc.coords,
+    propertyCoord,
+    "walking"
+  );
+  const driveUser = useTravelTime(
+    userLoc.coords,
+    propertyCoord,
+    "driving"
+  );
 
   // Property ratings live alongside landlord ratings on the detail response.
   const propertyRatings: any[] = property?.property_ratings ?? [];
@@ -443,6 +479,130 @@ export default function PropertyDetail() {
                 </div>
               )}
             </div>
+
+            {/* Distances — four numbers (distance from NAUB, from you, walk
+                time, drive time). Walks/drives use the server travel-time
+                endpoint when the student has shared their location; falls
+                back to a heuristic estimate otherwise. */}
+            {propertyCoord && (
+              <div className="bg-white rounded-2xl p-6 border border-[#EBEBEB]">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-bold text-foreground">Distances</h2>
+                  {!userLoc.coords && !userLoc.isLoading && !userLoc.error && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={userLoc.requestLocation}
+                    >
+                      <Footprints className="h-3.5 w-3.5" />
+                      Use my location
+                    </Button>
+                  )}
+                  {userLoc.isLoading && (
+                    <Button size="sm" variant="outline" disabled className="gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Locating…
+                    </Button>
+                  )}
+                </div>
+                {userLoc.error && (
+                  <p className="text-xs text-amber-700 mb-3">
+                    Couldn't get your location — distances from NAUB only.
+                  </p>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-xl border border-[#EBEBEB] p-3 flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#FFF0F0" }}>
+                      <MapPin className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">From NAUB</div>
+                      <div className="font-semibold text-foreground">
+                        {distanceFromNaubKm != null ? formatDistance(distanceFromNaubKm) : "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#EBEBEB] p-3 flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#FEF3C7" }}>
+                      <Footprints className="h-4 w-4 text-amber-700" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">
+                        Walk {userLoc.coords ? "from you" : "from NAUB"}
+                      </div>
+                      <div className="font-semibold text-foreground">
+                        {(() => {
+                          const precise = userLoc.coords ? walkUser : null;
+                          const minutes =
+                            precise?.duration_min ??
+                            (distanceFromNaubKm != null
+                              ? estimateWalkMinutes(
+                                  userLoc.coords ? distanceFromUserKm ?? distanceFromNaubKm : distanceFromNaubKm
+                                )
+                              : null);
+                          if (minutes == null) return "—";
+                          const label = formatDuration(minutes);
+                          return userLoc.coords && precise
+                            ? `${label}${precise.source === "estimate" ? " (est.)" : ""}`
+                            : `~${label}`;
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#EBEBEB] p-3 flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#EFF6FF" }}>
+                      <Car className="h-4 w-4 text-blue-700" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">
+                        Drive {userLoc.coords ? "from you" : "from NAUB"}
+                      </div>
+                      <div className="font-semibold text-foreground">
+                        {(() => {
+                          const precise = userLoc.coords ? driveUser : null;
+                          const minutes =
+                            precise?.duration_min ??
+                            (distanceFromNaubKm != null
+                              ? estimateDriveMinutes(
+                                  userLoc.coords ? distanceFromUserKm ?? distanceFromNaubKm : distanceFromNaubKm
+                                )
+                              : null);
+                          if (minutes == null) return "—";
+                          const label = formatDuration(minutes);
+                          return userLoc.coords && precise
+                            ? `${label}${precise.source === "estimate" ? " (est.)" : ""}`
+                            : `~${label}`;
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#EBEBEB] p-3 flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#F0FDF4" }}>
+                      <Navigation className="h-4 w-4 text-green-700" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs text-muted-foreground">From you</div>
+                      <div className="font-semibold text-foreground">
+                        {userLoc.coords && distanceFromUserKm != null
+                          ? formatDistance(distanceFromUserKm)
+                          : "—"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-muted-foreground mt-3">
+                  {userLoc.coords && driveUser?.source === "mapbox"
+                    ? "Walk and drive times are real Mapbox directions."
+                    : "Walk and drive times are estimates from straight-line distance; tap ‘Use my location’ for precise directions."}
+                </p>
+              </div>
+            )}
 
             {/* Reviews — property + landlord reviews, newest first. Each card
                 is tagged so a reader can tell what's being reviewed. */}

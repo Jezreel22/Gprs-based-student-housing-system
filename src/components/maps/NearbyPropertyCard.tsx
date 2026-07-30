@@ -9,9 +9,10 @@
  */
 
 import Link from "next/link";
-import { MapPin, Bed, ShieldCheck, ExternalLink, Navigation } from "lucide-react";
+import { MapPin, Bed, ShieldCheck, ExternalLink, Navigation, Footprints, Car } from "lucide-react";
 import TrustBadge from "@/components/TrustBadge";
 import { formatDistance, formatNGN, buildDirectionsUrl } from "@/lib/maps/utils";
+import { estimateWalkMinutes, estimateDriveMinutes, formatDuration } from "@/lib/maps/travel";
 import type { MapCentre, NearbyProperty } from "@/lib/maps/types";
 import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 
@@ -77,18 +78,38 @@ export default function NearbyPropertyCard({
           </span>
         </div>
 
-        {/* Distances */}
+        {/* Distances — distance + walk time, plus a drive-time line. The "from
+            you" rows use the centre distance when the user hasn't shared a
+            location, so the card always shows both travel modes. */}
         <div className="flex flex-col gap-0.5">
           <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <MapPin className="h-2.5 w-2.5 shrink-0" />
             {formatDistance(p.distance_from_naub_km)}
+            <span className="flex items-center gap-0.5 ml-1">
+              <Footprints className="h-2.5 w-2.5 shrink-0" />
+              ~{formatDuration(estimateWalkMinutes(p.distance_from_naub_km))}
+            </span>
           </span>
           {userLocation && (
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <Navigation className="h-2.5 w-2.5 shrink-0" />
               {formatDistance(p.distance_from_centre_km, "from you")}
+              <span className="flex items-center gap-0.5 ml-1">
+                <Footprints className="h-2.5 w-2.5 shrink-0" />
+                ~{formatDuration(estimateWalkMinutes(p.distance_from_centre_km))}
+              </span>
             </span>
           )}
+          {/* Driving time — uses the user distance when known, else NAUB. */}
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Car className="h-2.5 w-2.5 shrink-0" />
+            ~{formatDuration(
+              estimateDriveMinutes(
+                userLocation ? p.distance_from_centre_km : p.distance_from_naub_km
+              )
+            )}{" "}
+            drive
+          </span>
         </div>
       </div>
 
