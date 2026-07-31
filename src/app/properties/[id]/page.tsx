@@ -15,14 +15,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { pickListingPhotos } from "@/lib/listing-photos";
-import PropertyMap from "@/components/maps/PropertyMap";
+import PropertyMap, { PropertyMapHandle } from "@/components/maps/PropertyMap";
 import NearbyAmenitiesCard from "@/components/maps/NearbyAmenitiesCard";
+import RouteCard from "@/components/maps/RouteCard";
 import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useTravelTime } from "@/hooks/use-travel-time";
+import { useDirections } from "@/hooks/use-directions";
 import { NAUB_COORDS } from "@/lib/maps/constants";
 import { haversineKm, formatDistance } from "@/lib/maps/utils";
-import { estimateWalkMinutes, estimateDriveMinutes, formatDuration } from "@/lib/maps/travel";
+import { estimateWalkMinutes, estimateDriveMinutes, formatDuration, type TravelProfile } from "@/lib/maps/travel";
 import { computeProximityScore, PROXIMITY_CLASSIFICATIONS } from "@/lib/maps/proximity-score";
 import { Heart } from "lucide-react";
 import {
@@ -151,6 +153,17 @@ export default function PropertyDetail() {
     propertyCoord,
     "driving"
   );
+
+  // Feature 5 — route navigation. Origin is the user's live fix when shared,
+  // otherwise NAUB (matches the Distances card's reference point). Profile
+  // is local state so the toggle drives both the card and the polyline.
+  const propertyMapRef = useRef<PropertyMapHandle>(null);
+  const [routeProfile, setRouteProfile] = useState<TravelProfile>("driving");
+  const routeOrigin: { lat: number; lng: number } | null = propertyCoord
+    ? (userLoc.coords ?? NAUB_COORDS)
+    : null;
+  const routeDirections = useDirections(routeOrigin, propertyCoord, routeProfile);
+  const routeIsLoading = !!propertyCoord && routeDirections === null;
 
   // Property ratings live alongside landlord ratings on the detail response.
   const propertyRatings: any[] = property?.property_ratings ?? [];
@@ -441,11 +454,13 @@ export default function PropertyDetail() {
 
               {property.latitude && property.longitude ? (
                 <PropertyMap
+                  ref={propertyMapRef}
                   lat={property.latitude}
                   lng={property.longitude}
                   verified={property.landlord?.verification_status === "verified"}
                   rentAmountNgn={property.rent_amount_ngn}
                   height={320}
+                  route={routeDirections?.geometry ?? null}
                 />
               ) : (
                 <div className="rounded-xl overflow-hidden border border-[#EBEBEB] bg-[#F7F7F7] flex flex-col items-center justify-center gap-3 p-6 text-center"
@@ -633,6 +648,21 @@ export default function PropertyDetail() {
                     : "Walk and drive times are estimates from straight-line distance; tap ‘Use my location’ for precise directions."}
                 </p>
               </div>
+            )}
+
+            {/* Feature 5 — Route card with polyline + step-by-step directions.
+                Mounts only when the property has coords. Matches the Distances
+                card's visual idiom. */}
+            {propertyCoord && routeOrigin && (
+              <RouteCard
+                directions={routeDirections}
+                property={propertyCoord}
+                origin={routeOrigin}
+                hasUserLocation={!!userLoc.coords}
+                isLoading={routeIsLoading}
+                profile={routeProfile}
+                onProfileChange={setRouteProfile}
+              />
             )}
 
             {/* Reviews — property + landlord reviews, newest first. Each card

@@ -26,8 +26,11 @@ import NavBar from "@/components/NavBar";
 import LocationSearch from "@/components/maps/LocationSearch";
 import MapFiltersPanel from "@/components/maps/MapFiltersPanel";
 import NearbyPropertyCard from "@/components/maps/NearbyPropertyCard";
+import RouteOverlay from "@/components/maps/RouteOverlay";
 import { useGeolocation } from "@/hooks/use-geolocation";
+import { useDirections } from "@/hooks/use-directions";
 import { useNearbyProperties } from "@/hooks/use-nearby-properties";
+import type { TravelProfile } from "@/lib/maps/travel";
 import { NAUB_COORDS, NAUB_DEFAULT_ZOOM } from "@/lib/maps/constants";
 import { formatAccuracy } from "@/lib/maps/utils";
 import type {
@@ -78,6 +81,7 @@ function MapPageInner() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchLabel, setSearchLabel] = useState("Near NAUB campus");
+  const [routeProfile, setRouteProfile] = useState<TravelProfile>("driving");
 
   const mapRef = useRef<MapViewHandle>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -113,6 +117,24 @@ function MapPageInner() {
   });
 
   const properties = data?.data ?? [];
+
+  // ── Selected property + route overlay (Feature 5) ────────────────────────
+  const selectedProperty = selectedId
+    ? properties.find((p) => p.id === selectedId) ?? null
+    : null;
+  // Origin: user GPS when available, NAUB otherwise (matches the detail page
+  // and the Distances card's reference convention).
+  const routeOrigin: { lat: number; lng: number } = geo.coords ?? NAUB_COORDS;
+  const routeDestination = selectedProperty
+    ? { lat: selectedProperty.latitude, lng: selectedProperty.longitude }
+    : null;
+  // Only fetch when both endpoints exist; otherwise hook is disabled.
+  const routeDirections = useDirections(
+    routeDestination ? routeOrigin : null,
+    routeDestination,
+    routeProfile
+  );
+  const routeIsLoading = !!selectedProperty && routeDirections === null;
 
   // ── Map events ────────────────────────────────────────────────────────────
   const handleMapIdle = useCallback(
@@ -288,6 +310,7 @@ function MapPageInner() {
               zoom={mapZoom}
               userLocation={geo.coords}
               userAccuracy={geo.coords?.accuracy}
+              route={routeDirections?.geometry ?? null}
               selectedId={selectedId}
               onSelectProperty={handleSelectProperty}
               onIdle={handleMapIdle}
@@ -417,6 +440,19 @@ function MapPageInner() {
                 ))
               )}
             </div>
+
+            {/* Feature 5 — route overlay panel (visible only when a property
+                is selected). Compact summary + link to the full RouteCard on
+                the detail page. */}
+            {selectedProperty && (
+              <RouteOverlay
+                directions={routeDirections}
+                propertyId={selectedProperty.id}
+                hasUserLocation={!!geo.coords}
+                isLoading={routeIsLoading}
+                profile={routeProfile}
+              />
+            )}
 
             {/* Mobile filters drawer */}
             {filtersOpen && (

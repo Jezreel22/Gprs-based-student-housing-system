@@ -25,7 +25,7 @@ import {
   useImperativeHandle,
 } from "react";
 import type mapboxgl from "mapbox-gl";
-import type { Feature, Polygon, FeatureCollection } from "geojson";
+import type { Feature, Polygon, FeatureCollection, LineString } from "geojson";
 import { useMapbox } from "@/hooks/use-mapbox";
 import {
   buildMarkerIcon,
@@ -54,6 +54,10 @@ export interface MapViewHandle {
   flyTo: (coords: MapCentre, zoom?: number) => void;
   /** Return current visible bounds */
   getBounds: () => MapBounds | null;
+  /** Replace the route polyline layer (pass null to hide it). */
+  setRoute: (line: LineString | null) => void;
+  /** Fit the map to a list of [lng,lat] points with optional padding (px). */
+  fitToBounds: (points: [number, number][], padding?: number) => void;
 }
 
 interface MapViewProps {
@@ -63,6 +67,13 @@ interface MapViewProps {
   userLocation?: MapCentre | null;
   /** GPS accuracy of the user fix, in metres — renders the accuracy circle. */
   userAccuracy?: number | null;
+  /**
+   * Optional route polyline (GeoJSON LineString in [lng,lat] order).
+   * Pass `null` to hide. Renders as a single line layer named `route-line`.
+   */
+  route?: LineString | null;
+  /** Hex colour for the route line. Defaults to the brand red. */
+  routeColour?: string;
   selectedId?: string | null;
   onSelectProperty?: (id: string | null) => void;
   onIdle?: (centre: MapCentre, bounds: MapBounds) => void;
@@ -146,6 +157,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     zoom,
     userLocation,
     userAccuracy,
+    route,
+    routeColour,
     selectedId,
     onSelectProperty,
     onIdle,
@@ -165,6 +178,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   // Accuracy data that arrived before the map style finished loading —
   // flushed by the "load" handler in the init effect.
   const pendingAccuracyDataRef = useRef<Feature<Polygon> | FeatureCollection | null>(null);
+  // Route data that arrived before the map style finished loading.
+  const pendingRouteRef = useRef<LineString | null>(null);
   // Last zoom prop we animated to. The prop is React state that never sees
   // wheel-zoom, so we must not reapply it on every centre change.
   const lastAppliedZoomRef = useRef<number | null>(null);
@@ -236,10 +251,38 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           "line-width": 1.5,
         },
       });
+
+      // Route polyline layer (Feature 5). Single source + single line layer;
+      // data is swapped via setData on the route prop change.
+      map.addSource("route-line", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "route-line",
+        type: "line",
+        source: "route-line",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": routeColour ?? "#FF5A5F",
+          "line-width": 4,
+          "line-opacity": 0.9,
+        },
+      });
+
       const pending = pendingAccuracyDataRef.current;
       if (pending) {
         (map.getSource("user-accuracy") as mapboxgl.GeoJSONSource).setData(pending);
         pendingAccuracyDataRef.current = null;
+      }
+      const pendingRoute = pendingRouteRef.current;
+      if (pendingRoute) {
+        (map.getSource("route-line") as mapboxgl.GeoJSONSource).setData({
+          type: "Feature",
+          geometry: pendingRoute,
+          properties: {},
+        });
+        pendingRouteRef.current = null;
       }
     });
 
@@ -278,6 +321,42 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         east: b.getEast(),
         west: b.getWest(),
       } satisfies MapBounds;
+    },
+    setRoute: (line: LineString | null) => {
+      const map = mapRef.current;
+      if (!map) return;
+      const source = map.getSource("route-line") as
+        | mapboxgl.GeoJSONSource
+        | undefined;
+      const data = line
+        ? { type: "Feature" as const, geometry: line, properties: {} }
+        : { type: "FeatureCollection" as const, features: [] };
+      if (source) source.setData(data);
+    },
+    fitToBounds: (points: [number, number][], padding = 64) => {
+      const map = mapRef.current;
+      if (!map || points.length === 0) return;
+      if (points.length === 1) {
+        map.flyTo({ center: points[0], zoom: Math.max(map.getZoom(), 14) });
+        return;
+      }
+      const bounds = points.reduce(
+        (b, [lng, lat]) => {
+          if (lng < b[0]) b[0] = lng;
+          if (lat < b[1]) b[1] = lat;
+          if (lng > b[2]) b[2] = lng;
+          if (lat > b[3]) b[3] = lat;
+          return b;
+        },
+        [Infinity, Infinity, -Infinity, -Infinity] as [number, number, number, number]
+      );
+      map.fitBounds(
+        [
+          [bounds[0], bounds[1]],
+          [bounds[2], bounds[3]],
+        ],
+        { padding, duration: 700 }
+      );
     },
   }));
 
@@ -382,6 +461,34 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       pendingAccuracyDataRef.current = data;
     }
   }, [mapReady, userLocation, userAccuracy]);
+
+  // ── Route polyline data ──────────────────────────────────────────────────
+  // Mirrors the accuracy-circle pattern. Empty/FeatureCollection hides the
+  // line. The line is set as a single Feature wrapping the LineString, which
+  // is what Mapbox's GeoJSONSource expects for a single-geometry line layer.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    const data = route
+      ? { type: "Feature" as const, geometry: route, properties: {} }
+      : { type: "FeatureCollection" as const, features: [] };
+    const source = map.getSource("route-line") as mapboxgl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData(data);
+    } else if (route) {
+      pendingRouteRef.current = route;
+    }
+  }, [mapReady, route]);
+
+  // ── Route paint (colour) sync ────────────────────────────────────────────
+  // The load handler captured the initial `routeColour`; this keeps the
+  // layer paint in sync if the parent ever changes the prop.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !routeColour) return;
+    if (!map.getLayer("route-line")) return;
+    map.setPaintProperty("route-line", "line-color", routeColour);
+  }, [mapReady, routeColour]);
 
   // ── Property markers (add / remove) ──────────────────────────────────────
   useEffect(() => {
