@@ -227,8 +227,12 @@ export function accuracyCircleFeature(
 /**
  * Format a GPS accuracy radius for display.
  * < 1000 m → "±35 m"; ≥ 1000 m → "±1.2 km".
+ *
+ * Branches on the *displayed* rounded value, not the raw input, so e.g.
+ * 999.6 m reads as "±1.0 km" rather than "±1000 m".
  */
 export function formatAccuracy(meters: number): string {
-  if (meters < 1000) return `±${Math.round(meters)} m`;
-  return `±${(meters / 1000).toFixed(1)} km`;
+  const roundedM = Math.round(meters);
+  if (roundedM < 1000) return `±${roundedM} m`;
+  return `±${(roundedM / 1000).toFixed(1)} km`;
 }

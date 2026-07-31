@@ -30,8 +30,21 @@ export function useTravelTime(
   profile: TravelProfile = "driving"
 ): TravelTimeResult | null {
   const enabled = !!from && !!to;
+  // Round to 4 dp (~11 m) in the queryKey to match the server's LRU key
+  // (route.ts:cacheKey). Without rounding, two fixes 5 m apart would
+  // produce different keys and TanStack Query would dedup *within* the
+  // client but the server would still fan out — defeating the whole LRU
+  // optimisation and burning Mapbox calls on GPS jitter.
+  const r = (n: number) => Number(n.toFixed(4));
   const { data } = useQuery({
-    queryKey: ["travel-time", from?.lat ?? 0, from?.lng ?? 0, to?.lat ?? 0, to?.lng ?? 0, profile],
+    queryKey: [
+      "travel-time",
+      from ? r(from.lat) : 0,
+      from ? r(from.lng) : 0,
+      to ? r(to.lat) : 0,
+      to ? r(to.lng) : 0,
+      profile,
+    ],
     queryFn: () =>
       customFetch<TravelTimeResult>(
         `/api/maps/travel-time?from_lat=${from!.lat}&from_lng=${from!.lng}` +

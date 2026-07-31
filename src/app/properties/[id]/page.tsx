@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { pickListingPhotos } from "@/lib/listing-photos";
-import PropertyMap, { PropertyMapHandle } from "@/components/maps/PropertyMap";
+import PropertyMap from "@/components/maps/PropertyMap";
 import NearbyAmenitiesCard from "@/components/maps/NearbyAmenitiesCard";
 import RouteCard from "@/components/maps/RouteCard";
 import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
@@ -157,7 +157,6 @@ export default function PropertyDetail() {
   // Feature 5 — route navigation. Origin is the user's live fix when shared,
   // otherwise NAUB (matches the Distances card's reference point). Profile
   // is local state so the toggle drives both the card and the polyline.
-  const propertyMapRef = useRef<PropertyMapHandle>(null);
   const [routeProfile, setRouteProfile] = useState<TravelProfile>("driving");
   const routeOrigin: { lat: number; lng: number } | null = propertyCoord
     ? (userLoc.coords ?? NAUB_COORDS)
@@ -454,7 +453,6 @@ export default function PropertyDetail() {
 
               {property.latitude && property.longitude ? (
                 <PropertyMap
-                  ref={propertyMapRef}
                   lat={property.latitude}
                   lng={property.longitude}
                   verified={property.landlord?.verification_status === "verified"}

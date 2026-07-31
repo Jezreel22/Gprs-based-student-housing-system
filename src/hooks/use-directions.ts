@@ -25,8 +25,18 @@ export function useDirections(
   profile: TravelProfile = "driving"
 ): DirectionsResponse | null {
   const enabled = !!from && !!to;
+  // Round to 4 dp (~11 m) in the queryKey to match the server's LRU key.
+  // See useTravelTime for the rationale.
+  const r = (n: number) => Number(n.toFixed(4));
   const { data } = useQuery({
-    queryKey: ["directions", from?.lat ?? 0, from?.lng ?? 0, to?.lat ?? 0, to?.lng ?? 0, profile],
+    queryKey: [
+      "directions",
+      from ? r(from.lat) : 0,
+      from ? r(from.lng) : 0,
+      to ? r(to.lat) : 0,
+      to ? r(to.lng) : 0,
+      profile,
+    ],
     queryFn: () =>
       customFetch<DirectionsResponse>(
         `/api/maps/directions?from_lat=${from!.lat}&from_lng=${from!.lng}` +

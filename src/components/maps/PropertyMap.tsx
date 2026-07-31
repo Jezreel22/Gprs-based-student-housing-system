@@ -12,16 +12,9 @@
  *
  * Feature 5 additions (all optional, backward-compatible):
  *  - Renders a route polyline layer when `route` is provided.
- *  - Exposes an imperative handle with `setRoute` / `fitToBounds` so the
- *    RouteCard can drive the polyline + camera.
  */
 
-import {
-  useEffect,
-  useRef,
-  forwardRef,
-  useImperativeHandle,
-} from "react";
+import { useEffect, useRef } from "react";
 import type mapboxgl from "mapbox-gl";
 import type { FeatureCollection, LineString } from "geojson";
 import { useMapbox } from "@/hooks/use-mapbox";
@@ -30,13 +23,6 @@ import {
   buildMarkerIcon,
   iconElement,
 } from "@/lib/maps/utils";
-
-export interface PropertyMapHandle {
-  /** Replace the route polyline layer (pass null to hide it). */
-  setRoute: (line: LineString | null) => void;
-  /** Fit the map to a list of [lng,lat] points. */
-  fitToBounds: (points: [number, number][], padding?: number) => void;
-}
 
 interface PropertyMapProps {
   lat: number;
@@ -55,19 +41,16 @@ interface PropertyMapProps {
 const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
 const EMPTY_ROUTE_FC: FeatureCollection = { type: "FeatureCollection", features: [] };
 
-const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(function PropertyMap(
-  {
-    lat,
-    lng,
-    verified = false,
-    rentAmountNgn = null,
-    height = 320,
-    className = "",
-    route = null,
-    routeColour,
-  },
-  ref
-) {
+export default function PropertyMap({
+  lat,
+  lng,
+  verified = false,
+  rentAmountNgn = null,
+  height = 320,
+  className = "",
+  route = null,
+  routeColour,
+}: PropertyMapProps) {
   const { isLoaded, isError, mapboxgl } = useMapbox();
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
@@ -82,6 +65,7 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(function Pro
     : rentAmountNgn && rentAmountNgn > 100_000
       ? "#7C3AED"
       : "#FF5A5F";
+
   useEffect(() => {
     if (!isLoaded || !mapboxgl || !mapRef.current) return;
 
@@ -167,45 +151,6 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(function Pro
     map.setPaintProperty("route-line", "line-color", routeColour);
   }, [routeColour]);
 
-  // Imperative handle so the parent (RouteCard) can drive the polyline +
-  // camera fit.
-  useImperativeHandle(ref, () => ({
-    setRoute: (line: LineString | null) => {
-      const map = mapInstanceRef.current;
-      if (!map) return;
-      const data = line
-        ? { type: "Feature" as const, geometry: line, properties: {} }
-        : EMPTY_ROUTE_FC;
-      const source = map.getSource("route-line") as mapboxgl.GeoJSONSource | undefined;
-      if (source) source.setData(data);
-    },
-    fitToBounds: (points: [number, number][], padding = 64) => {
-      const map = mapInstanceRef.current;
-      if (!map || points.length === 0) return;
-      if (points.length === 1) {
-        map.flyTo({ center: points[0], zoom: Math.max(map.getZoom(), 14) });
-        return;
-      }
-      const bounds = points.reduce(
-        (b, [lng, lat]) => {
-          if (lng < b[0]) b[0] = lng;
-          if (lat < b[1]) b[1] = lat;
-          if (lng > b[2]) b[2] = lng;
-          if (lat > b[3]) b[3] = lat;
-          return b;
-        },
-        [Infinity, Infinity, -Infinity, -Infinity] as [number, number, number, number]
-      );
-      map.fitBounds(
-        [
-          [bounds[0], bounds[1]],
-          [bounds[2], bounds[3]],
-        ],
-        { padding, duration: 700 }
-      );
-    },
-  }));
-
   // Cleanup
   useEffect(() => {
     return () => {
@@ -243,6 +188,4 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(function Pro
       </a>
     </div>
   );
-});
-
-export default PropertyMap;
+}

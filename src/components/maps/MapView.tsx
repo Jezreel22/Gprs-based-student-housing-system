@@ -54,10 +54,6 @@ export interface MapViewHandle {
   flyTo: (coords: MapCentre, zoom?: number) => void;
   /** Return current visible bounds */
   getBounds: () => MapBounds | null;
-  /** Replace the route polyline layer (pass null to hide it). */
-  setRoute: (line: LineString | null) => void;
-  /** Fit the map to a list of [lng,lat] points with optional padding (px). */
-  fitToBounds: (points: [number, number][], padding?: number) => void;
 }
 
 interface MapViewProps {
@@ -321,42 +317,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         east: b.getEast(),
         west: b.getWest(),
       } satisfies MapBounds;
-    },
-    setRoute: (line: LineString | null) => {
-      const map = mapRef.current;
-      if (!map) return;
-      const source = map.getSource("route-line") as
-        | mapboxgl.GeoJSONSource
-        | undefined;
-      const data = line
-        ? { type: "Feature" as const, geometry: line, properties: {} }
-        : { type: "FeatureCollection" as const, features: [] };
-      if (source) source.setData(data);
-    },
-    fitToBounds: (points: [number, number][], padding = 64) => {
-      const map = mapRef.current;
-      if (!map || points.length === 0) return;
-      if (points.length === 1) {
-        map.flyTo({ center: points[0], zoom: Math.max(map.getZoom(), 14) });
-        return;
-      }
-      const bounds = points.reduce(
-        (b, [lng, lat]) => {
-          if (lng < b[0]) b[0] = lng;
-          if (lat < b[1]) b[1] = lat;
-          if (lng > b[2]) b[2] = lng;
-          if (lat > b[3]) b[3] = lat;
-          return b;
-        },
-        [Infinity, Infinity, -Infinity, -Infinity] as [number, number, number, number]
-      );
-      map.fitBounds(
-        [
-          [bounds[0], bounds[1]],
-          [bounds[2], bounds[3]],
-        ],
-        { padding, duration: 700 }
-      );
     },
   }));
 
