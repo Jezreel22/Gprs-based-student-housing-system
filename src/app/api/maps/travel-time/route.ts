@@ -78,8 +78,7 @@ function cacheGet(key: string): TravelTimeResponse | null {
   return null;
 }
 
-function cachePut(value: TravelTimeResponse): void {
-  const key = cacheKey(value as unknown as { from_lat: number; from_lng: number; to_lat: number; to_lng: number; profile: TravelProfile });
+function cachePut(value: TravelTimeResponse, key: string): void {
   const now = Date.now();
   // Evict expired + duplicate
   for (let i = cache.length - 1; i >= 0; i--) {
@@ -166,7 +165,7 @@ export async function GET(req: NextRequest) {
     clearTimeout(timeout);
 
     const response = result ?? fallback;
-    cachePut(response);
+    cachePut(response, key);
     return jsonResponse(response);
   } catch (err) {
     return handleError(err, req);

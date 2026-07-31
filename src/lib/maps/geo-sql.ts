@@ -40,10 +40,10 @@ export function haversineDistanceSql(
     6371 * acos(
       LEAST(1.0, GREATEST(-1.0,
         cos(radians(${refLat})) *
-        cos(${latFragment}) *
-        cos(${lngFragment} - radians(${refLng})) +
+        cos(radians(${latFragment})) *
+        cos(radians(${lngFragment}) - radians(${refLng})) +
         sin(radians(${refLat})) *
-        sin(${latFragment})
+        sin(radians(${latFragment}))
       ))
     )
   )`;
