@@ -44,6 +44,10 @@ const Query = z.object({
 // ── Tiny LRU cache ─────────────────────────────────────────────────────────
 const CACHE_MAX = 500;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+// Empty results get a much shorter TTL: POI coverage grows over time, so a
+// property with no hits today may have some next week — but we still want to
+// suppress the ~10-call Mapbox fan-out for repeat visitors in the meantime.
+const CACHE_EMPTY_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface CacheEntry {
   key: string;
@@ -61,13 +65,17 @@ function cacheGet(key: string): NearbyAmenitiesResponse | null {
   return null;
 }
 
-function cachePut(value: NearbyAmenitiesResponse, key: string): void {
+function cachePut(
+  value: NearbyAmenitiesResponse,
+  key: string,
+  ttlMs: number = CACHE_TTL_MS
+): void {
   const now = Date.now();
   // Evict expired + duplicate keyed by the property id.
   for (let i = cache.length - 1; i >= 0; i--) {
     if (cache[i].expiresAt <= now || cache[i].key === key) cache.splice(i, 1);
   }
-  cache.push({ key, value, expiresAt: now + CACHE_TTL_MS });
+  cache.push({ key, value, expiresAt: now + ttlMs });
   if (cache.length > CACHE_MAX) cache.shift();
 }
 
@@ -186,9 +194,13 @@ export async function GET(
       if (list.length > 0) categories[key] = list;
     }
 
-    // No Mapbox results at all → empty response (UI hides the card).
+    // No Mapbox results at all → empty response (UI hides the card). Negative-
+    // cache it with a short TTL so repeat visitors don't each re-fan-out the
+    // full set of Mapbox category queries for a property that has no POIs.
     if (Object.keys(categories).length === 0) {
-      return jsonResponse(emptyResponse(centre));
+      const empty = emptyResponse(centre);
+      cachePut(empty, id, CACHE_EMPTY_TTL_MS);
+      return jsonResponse(empty);
     }
 
     const response: NearbyAmenitiesResponse = {

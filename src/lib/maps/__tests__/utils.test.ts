@@ -62,4 +62,11 @@ describe("formatAccuracy", () => {
     expect(formatAccuracy(1000)).toBe("±1.0 km");
     expect(formatAccuracy(1200)).toBe("±1.2 km");
   });
+
+  it("branches on the display-rounded value at the unit boundary", () => {
+    // Regression: branching on the raw input rendered 999.6 m as "±1000 m".
+    // Rounding first (→1000) must tip it into the km branch instead.
+    expect(formatAccuracy(999.6)).toBe("±1.0 km");
+    expect(formatAccuracy(999.4)).toBe("±999 m");
+  });
 });
