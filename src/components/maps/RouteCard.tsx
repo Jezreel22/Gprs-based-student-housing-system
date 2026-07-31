@@ -26,6 +26,8 @@ import {
   Footprints,
   Car,
   ExternalLink,
+  Loader2,
+  LocateFixed,
   MapPin,
   Navigation,
   Route,
@@ -41,6 +43,7 @@ import { buildDirectionsUrl } from "@/lib/maps/utils";
 import { formatDuration, type TravelProfile } from "@/lib/maps/travel";
 import { formatDistance } from "@/lib/maps/utils";
 import type { DirectionsResponse, RouteStep } from "@/lib/maps/directions";
+import type { GeolocationErrorCode } from "@/hooks/use-geolocation";
 
 interface RouteCardProps {
   /** Resolved directions from `useDirections`, or null while loading / empty. */
@@ -56,9 +59,27 @@ interface RouteCardProps {
   /** Controlled profile (so the toggle in the parent stays in sync). */
   profile: TravelProfile;
   onProfileChange: (p: TravelProfile) => void;
+  /**
+   * Called when the user taps "Use my location" (only shown when there's no
+   * GPS fix yet). Wires to the page's `useGeolocation().requestLocation`.
+   * Omitting it hides the button entirely.
+   */
+  onUseMyLocation?: () => void;
+  /** True while the browser is acquiring a fix — shows a spinner on the button. */
+  isLocating?: boolean;
+  /** Last geolocation error, surfaced as a short inline hint. */
+  locationError?: GeolocationErrorCode | null;
 }
 
 const STEPS_DEFAULT = 12;
+
+/** Short inline hints for geolocation failures, keyed by the typed error code. */
+const LOCATION_ERROR_HINT: Record<GeolocationErrorCode, string> = {
+  permission_denied: "Location permission denied — enable it in your browser.",
+  position_unavailable: "Couldn't get a location fix right now.",
+  timeout: "Getting your location timed out — try again.",
+  unsupported: "Location isn't supported on this device.",
+};
 
 export default function RouteCard({
   directions,
@@ -68,6 +89,9 @@ export default function RouteCard({
   isLoading,
   profile,
   onProfileChange,
+  onUseMyLocation,
+  isLocating = false,
+  locationError = null,
 }: RouteCardProps) {
   const [showAll, setShowAll] = useState(false);
   const [stepsOpen, setStepsOpen] = useState(true);
