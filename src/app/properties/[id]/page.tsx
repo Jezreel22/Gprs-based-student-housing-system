@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,10 +18,13 @@ import { pickListingPhotos } from "@/lib/listing-photos";
 import PropertyMap from "@/components/maps/PropertyMap";
 import NearbyAmenitiesCard from "@/components/maps/NearbyAmenitiesCard";
 import RouteCard from "@/components/maps/RouteCard";
+import LandmarkLine from "@/components/maps/LandmarkLine";
 import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
 import { useGeolocation } from "@/hooks/use-geolocation";
 import { useTravelTime } from "@/hooks/use-travel-time";
 import { useDirections } from "@/hooks/use-directions";
+import { useNearbyAmenities } from "@/hooks/use-nearby-amenities";
+import { describeLandmark } from "@/lib/maps/landmarks";
 import { NAUB_COORDS } from "@/lib/maps/constants";
 import { haversineKm, formatDistance } from "@/lib/maps/utils";
 import { estimateWalkMinutes, estimateDriveMinutes, formatDuration, type TravelProfile } from "@/lib/maps/travel";
@@ -133,6 +136,32 @@ export default function PropertyDetail() {
   const propertyCoord = propertyLat != null && propertyLng != null
     ? { lat: propertyLat, lng: propertyLng }
     : null;
+
+  // Feature 6 -- nearest POI across all categories, for the landmark fallback.
+  // useNearbyAmenities is cached 1h client-side and deduped by React Query
+  // key, so calling it here alongside NearbyAmenitiesCard below adds zero
+  // extra network requests.
+  const nearbyAmenities = useNearbyAmenities(params.id);
+  const nearestPoi = useMemo<{ name: string } | null>(() => {
+    const data = nearbyAmenities.data;
+    if (!data || data.source === "empty") return null;
+    let best: { name: string; distanceMeters: number } | null = null;
+    for (const list of Object.values(data.categories)) {
+      for (const p of list) {
+        if (!best || p.distanceMeters < best.distanceMeters) {
+          best = { name: p.name, distanceMeters: p.distanceMeters };
+        }
+      }
+    }
+    return best ? { name: best.name } : null;
+  }, [nearbyAmenities.data]);
+
+  // Pure description: nearest curated landmark (Opposite/Beside/Near/...) or
+  // a graceful fallback to the nearest POI when out of curated range.
+  const landmarkDescription = useMemo(
+    () => describeLandmark(propertyCoord, { fallbackPoi: nearestPoi }),
+    [propertyCoord, nearestPoi]
+  );
   // NAUB distance — pure client-side haversine against the shared constant.
   const distanceFromNaubKm = propertyCoord
     ? haversineKm(NAUB_COORDS, propertyCoord)
@@ -351,6 +380,9 @@ export default function PropertyDetail() {
               <div className="flex items-start justify-between gap-4 flex-wrap mb-3">
                 <div>
                   <h1 className="text-2xl font-bold text-foreground">{property.address}</h1>
+                  <div className="mt-1.5">
+                    <LandmarkLine description={landmarkDescription} />
+                  </div>
                   <div className="flex items-center gap-3 mt-2 flex-wrap">
                     <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                       <Bed className="h-4 w-4" />
