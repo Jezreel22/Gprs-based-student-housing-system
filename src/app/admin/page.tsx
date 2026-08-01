@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock, FileWarning, ArrowLeft } from "lucide-react";
+import { ShieldCheck, ShieldAlert, Home, AlertTriangle, CheckCircle, X, Gavel, Loader2, Wallet, Lock, FileWarning, ArrowLeft, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { customFetch } from "@/api/custom-fetch";
 import { EscrowDetailDrawer } from "@/app/admin/escrow/EscrowDetailDrawer";
@@ -53,6 +53,14 @@ export default function Admin() {
   const [adjReport, setAdjReport] = useState<{ id: string; type: string; target: string } | null>(null);
   const [reportStatus, setReportStatus] = useState("substantiated");
   const [reportNotes, setReportNotes] = useState("");
+  // Feature 7 — GPS verification. Verify dialog accepts a (prefilled)
+  // lat/lng pair; reject dialog reuses the `rejectReason` state above
+  // (already ≥ 5 chars thanks to the shared Zod-style validation pattern).
+  const [gpsVerify, setGpsVerify] = useState<{ id: string; address: string; lat: number | null; lng: number | null } | null>(null);
+  const [gpsVerifiedLat, setGpsVerifiedLat] = useState("");
+  const [gpsVerifiedLng, setGpsVerifiedLng] = useState("");
+  const [gpsReject, setGpsReject] = useState<{ id: string; address: string } | null>(null);
+  const [gpsBusy, setGpsBusy] = useState<string | null>(null);
   // Role gate (escrow-officer only). Render a gate until confirmed so the
   // admin shell — and its admin-only queries — never run for students/landlords.
   const [checked, setChecked] = useState(false);
@@ -93,6 +101,13 @@ export default function Admin() {
     queryFn: () => customFetch<any[]>("/api/admin/reports?open_only=true"),
   });
   const openReports: any[] = Array.isArray(reportsData) ? reportsData : [];
+  // Feature 7 — GPS verification queue.
+  const { data: gpsData, refetch: refetchGps } = useQuery<{ data: any[]; total: number }>({
+    queryKey: ["admin", "gps-verifications"],
+    enabled: allowed,
+    queryFn: () => customFetch<{ data: any[]; total: number }>("/api/admin/gps-verifications"),
+  });
+  const gpsPending: any[] = (gpsData as any)?.data ?? [];
 
   async function releaseEscrowNow(id: string) {
     setEscrowBusy(id);
@@ -203,6 +218,53 @@ export default function Admin() {
     });
   };
 
+  async function verifyGps() {
+    if (!gpsVerify) return;
+    setGpsBusy(gpsVerify.id);
+    try {
+      const body: { status: "verified"; latitude?: number; longitude?: number } = { status: "verified" };
+      if (gpsVerifiedLat.trim() !== "") {
+        const lat = parseFloat(gpsVerifiedLat);
+        if (Number.isFinite(lat)) body.latitude = lat;
+      }
+      if (gpsVerifiedLng.trim() !== "") {
+        const lng = parseFloat(gpsVerifiedLng);
+        if (Number.isFinite(lng)) body.longitude = lng;
+      }
+      await customFetch(`/api/admin/properties/${gpsVerify.id}/gps-verify`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      toast({ title: "GPS verified" });
+      setGpsVerify(null);
+      setGpsVerifiedLat(""); setGpsVerifiedLng("");
+      refetchGps();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Verification failed", description: e?.message ?? "Try again" });
+    } finally {
+      setGpsBusy(null);
+    }
+  }
+
+  async function rejectGps() {
+    if (!gpsReject || !rejectReason || rejectReason.length < 5) return;
+    setGpsBusy(gpsReject.id);
+    try {
+      await customFetch(`/api/admin/properties/${gpsReject.id}/gps-verify`, {
+        method: "POST",
+        body: JSON.stringify({ status: "rejected", reason: rejectReason }),
+      });
+      toast({ title: "GPS rejected" });
+      setGpsReject(null);
+      setRejectReason("");
+      refetchGps();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Rejection failed", description: e?.message ?? "Try again" });
+    } finally {
+      setGpsBusy(null);
+    }
+  }
+
   const openDisputes = (disputes as any[]).filter(d => ["open", "under_investigation"].includes(d.dispute_status));
   const resolvedDisputes = (disputes as any[]).filter(d => ["resolved", "closed"].includes(d.dispute_status));
 
@@ -248,7 +310,7 @@ export default function Admin() {
           <p className="text-sm text-muted-foreground mt-1">Review verifications, approve listings, and adjudicate disputes.</p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
           <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center">
             <div className="text-3xl font-bold text-primary">{(pendingUsers as any[]).length}</div>
             <div className="text-sm text-muted-foreground mt-1">Pending Verifications</div>
@@ -256,6 +318,10 @@ export default function Admin() {
           <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center">
             <div className="text-3xl font-bold text-amber-500">{pendingProps.length}</div>
             <div className="text-sm text-muted-foreground mt-1">Listings for Review</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center">
+            <div className="text-3xl font-bold text-cyan-600">{gpsPending.length}</div>
+            <div className="text-sm text-muted-foreground mt-1">GPS Pending</div>
           </div>
           <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5 text-center">
             <div className="text-3xl font-bold text-red-500">{openDisputes.length}</div>
@@ -274,6 +340,9 @@ export default function Admin() {
             </TabsTrigger>
             <TabsTrigger value="listings" className="rounded-lg px-4">
               Listings {pendingProps.length > 0 && <Badge className="ml-2 bg-amber-500 text-white text-xs">{pendingProps.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="gps" className="rounded-lg px-4">
+              GPS {gpsPending.length > 0 && <Badge className="ml-2 bg-cyan-500 text-white text-xs">{gpsPending.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="disputes" className="rounded-lg px-4">
               Disputes {openDisputes.length > 0 && <Badge className="ml-2 bg-red-500 text-white text-xs">{openDisputes.length}</Badge>}
@@ -417,6 +486,99 @@ export default function Admin() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* GPS TAB */}
+          <TabsContent value="gps">
+            {gpsPending.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-[#EBEBEB]">
+                <MapPin className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                <h3 className="font-semibold">No properties pending GPS verification</h3>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {gpsPending.map((p: any) => {
+                  const delta = p.coord_delta_km;
+                  const deltaColor =
+                    delta == null
+                      ? "bg-gray-100 text-muted-foreground"
+                      : delta > 0.5
+                        ? "bg-red-100 text-red-700"
+                        : delta > 0.1
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-green-100 text-green-700";
+                  return (
+                    <div key={p.id} className="bg-white rounded-xl border border-[#EBEBEB] p-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex gap-4">
+                          <div className="w-16 h-16 rounded-xl bg-gray-100 overflow-hidden shrink-0">
+                            {p.hero_photo_url ? (
+                              <img src={p.hero_photo_url} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center"><Home className="h-7 w-7 text-muted-foreground opacity-50" /></div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-sm">{p.address}</p>
+                            <p className="text-xs text-muted-foreground">{p.rooms} room(s) · {formatNGN(p.rent_amount_ngn)}/mo</p>
+                            {p.landlord && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                By: {p.landlord.first_name} {p.landlord.last_name} · {p.landlord.verification_status === "verified" ? (
+                                  <span className="inline-flex items-center gap-1 text-green-700"><CheckCircle className="h-3 w-3" /> Verified</span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-amber-700"><AlertTriangle className="h-3 w-3" /> Unverified</span>
+                                )}
+                              </p>
+                            )}
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Submitted:
+                              {p.latitude != null && p.longitude != null ? (
+                                <> {p.latitude.toFixed(6)}, {p.longitude.toFixed(6)}</>
+                              ) : (
+                                <span className="italic ml-1">no coordinates submitted</span>
+                              )}
+                            </div>
+                            {delta != null && (
+                              <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full mt-1 ${deltaColor}`}>
+                                Δ {delta} km
+                              </span>
+                            )}
+                            <Link href={`/properties/${p.id}`} className="text-xs text-primary hover:underline block mt-1">View full listing ↗</Link>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            style={{ background: "#34A853", color: "#fff", border: "none" }}
+                            className="gap-1 text-xs"
+                            onClick={() => {
+                              setGpsVerifiedLat(p.latitude != null ? String(p.latitude) : "");
+                              setGpsVerifiedLng(p.longitude != null ? String(p.longitude) : "");
+                              setGpsVerify({ id: p.id, address: p.address, lat: p.latitude ?? null, lng: p.longitude ?? null });
+                            }}
+                            disabled={gpsBusy === p.id}
+                          >
+                            <CheckCircle className="h-3.5 w-3.5" /> Verify GPS
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1 text-xs border-destructive/50 text-destructive"
+                            onClick={() => {
+                              setRejectReason("");
+                              setGpsReject({ id: p.id, address: p.address });
+                            }}
+                            disabled={gpsBusy === p.id}
+                          >
+                            <X className="h-3.5 w-3.5" /> Reject
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </TabsContent>

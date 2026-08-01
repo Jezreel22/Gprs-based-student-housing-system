@@ -28,7 +28,6 @@ import { describeLandmark } from "@/lib/maps/landmarks";
 import { NAUB_COORDS } from "@/lib/maps/constants";
 import { haversineKm, formatDistance } from "@/lib/maps/utils";
 import { estimateWalkMinutes, estimateDriveMinutes, formatDuration, type TravelProfile } from "@/lib/maps/travel";
-import { computeProximityScore, PROXIMITY_CLASSIFICATIONS } from "@/lib/maps/proximity-score";
 import { Heart } from "lucide-react";
 import {
   Bed, MapPin, Wifi, Zap, Droplets, Shield, Car, ChefHat,
@@ -73,6 +72,58 @@ function StatusBadge({ status }: { status?: string | null }) {
           style={{ background: c.bg }}>
       <span className="w-1.5 h-1.5 rounded-full bg-white/70" />
       {c.label}
+    </span>
+  );
+}
+
+/**
+ * GPS verification status pill — a trust signal for prospective tenants.
+ *
+ * Driven by Feature 7: an escrow officer compares the landlord-submitted
+ * coordinates against the physical address and sets gps_verification_status.
+ *
+ *   verified → green "Location verified" pill (a soft pulse draws the eye).
+ *   pending  → muted "Location pending review" pill (neutral, no value claim).
+ *   rejected → not rendered. A rejection is an internal officer decision;
+ *              surfacing it to prospective tenants would be misleading and
+ *              unfair to the listing, so the card simply omits the pill.
+ *   no coords → not rendered (nothing to verify).
+ */
+function GpsStatusPill({ status, verifiedAt }: { status?: string | null; verifiedAt?: string | null }) {
+  const s = status ?? "pending";
+  const verified = s === "verified" && !!verifiedAt;
+  if (s === "rejected" || s === "verified") {
+    if (!verified) return null;            // rejected → hidden; verified w/o stamp → defensive null
+  }
+
+  const cfg = verified
+    ? { label: "Location verified", Icon: ShieldCheck, dot: "#16A34A", ring: "rgba(22,163,74,0.35)", pulse: true,  hint: `Pin confirmed by NAUB Homes officer${verifiedAt ? ` · ${new Date(verifiedAt).toLocaleDateString()}` : ""}.` }
+    : { label: "Location pending review", Icon: MapPin, dot: "#D97706", ring: "rgba(217,119,6,0.30)",  pulse: false, hint: "An officer hasn't confirmed this map pin yet." };
+
+  const { label, Icon, dot, ring, pulse, hint } = cfg;
+
+  return (
+    <span
+      title={hint}
+      className="group relative inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold leading-none transition-transform hover:scale-[1.03]"
+      style={{
+        borderColor: ring,
+        background: `linear-gradient(180deg, ${ring.replace(/[\d.]+\)$/, "0.10)")}, ${ring.replace(/[\d.]+\)$/, "0.05)")})`,
+        color: dot,
+      }}
+    >
+      {/* Status dot — verified gently pulses; pending holds steady. */}
+      <span className="relative flex h-2 w-2">
+        {pulse && (
+          <span
+            className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
+            style={{ background: dot }}
+          />
+        )}
+        <span className="relative inline-flex h-2 w-2 rounded-full" style={{ background: dot }} />
+      </span>
+      <Icon className="h-3.5 w-3.5" />
+      {label}
     </span>
   );
 }
@@ -475,7 +526,13 @@ export default function PropertyDetail() {
 
             {/* Map */}
             <div className="bg-white rounded-2xl p-6 border border-[#EBEBEB]">
-              <h2 className="text-base font-bold text-foreground mb-4">Location</h2>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h2 className="text-base font-bold text-foreground">Location</h2>
+                <GpsStatusPill
+                  status={property.gps_verification_status}
+                  verifiedAt={property.geolocation_verified_at}
+                />
+              </div>
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: "#FFF0F0" }}>
                   <MapPin className="h-4 w-4 text-primary" />
@@ -541,28 +598,6 @@ export default function PropertyDetail() {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-base font-bold text-foreground">Distances</h2>
-                    {/* Campus proximity badge — computed client-side from the
-                        same pure module the APIs use, so the number matches
-                        the cards exactly. */}
-                    {(() => {
-                      const prox = computeProximityScore({
-                        distanceFromNaubKm: distanceFromNaubKm,
-                        gpsVerified: !!property.geolocation_verified_at,
-                        landlordVerified: property.landlord?.verification_status === "verified",
-                        averageRating: propertyRatingAverage > 0 ? propertyRatingAverage : null,
-                      });
-                      const cls = PROXIMITY_CLASSIFICATIONS[prox.classification];
-                      return (
-                        <span
-                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold leading-none"
-                          style={{ background: cls.bg, color: cls.color }}
-                          title={`Campus proximity: ${prox.score}/100 (${cls.label})`}
-                        >
-                          <MapPin className="h-3 w-3" />
-                          {prox.score}/100 · {cls.label}
-                        </span>
-                      );
-                    })()}
                   </div>
                   {!userLoc.coords && !userLoc.isLoading && !userLoc.error && (
                     <Button

@@ -268,6 +268,7 @@ export async function GET(req: NextRequest) {
         longitude: p.longitude ?? undefined,
         distance_from_naub_km: distKm ?? undefined,
         geolocation_verified_at: p.geolocation_verified_at?.toISOString() ?? null,
+        gps_verification_status: p.gps_verification_status ?? "pending",
         proximity_score: proximity.score,
         proximity_classification: proximity.classification,
         landlord: hasLandlord ? {

@@ -84,6 +84,10 @@ export const propertiesTable = pgTable("properties", {
   occupancy_code: text("occupancy_code").notNull().unique(),
 
   geolocation_verified_at: timestamp("geolocation_verified_at"),
+  // Feature 7 — GPS verification. Mirrors users.verification_status.
+  gps_verification_status: text("gps_verification_status").default("pending"),
+  verified_latitude: real("verified_latitude"),
+  verified_longitude: real("verified_longitude"),
   listing_status: text("listing_status").default("draft"),
   published_at: timestamp("published_at"),
 

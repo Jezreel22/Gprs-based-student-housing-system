@@ -57,6 +57,7 @@ export type NearbyProperty = {
   distance_from_centre_km: number;
   distance_from_naub_km: number;
   geolocation_verified_at: string | null;
+  gps_verification_status: string;
   proximity_score: number;
   proximity_classification: "excellent" | "good" | "average" | "poor";
   landlord: {
@@ -251,6 +252,7 @@ export async function GET(req: NextRequest) {
           distance_from_centre_km: Number(distance_km.toFixed(3)),
           distance_from_naub_km: naubKm,
           geolocation_verified_at: p.geolocation_verified_at?.toISOString() ?? null,
+          gps_verification_status: p.gps_verification_status ?? "pending",
           proximity_score: proximity.score,
           proximity_classification: proximity.classification,
           landlord: l

@@ -240,6 +240,12 @@ export interface PropertyDetail {
   listing_status?: string;
   /** @nullable */
   geolocation_verified_at?: string | null;
+  /** Feature 7 — GPS verification status: pending | verified | rejected. */
+  gps_verification_status?: string;
+  /** @nullable */
+  verified_latitude?: number | null;
+  /** @nullable */
+  verified_longitude?: number | null;
   /** @nullable */
   published_at?: string | null;
   /** @nullable */

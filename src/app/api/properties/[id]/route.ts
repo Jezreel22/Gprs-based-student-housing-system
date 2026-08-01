@@ -123,6 +123,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       description: property.description ?? null,
       listing_status: property.listing_status ?? "draft",
       geolocation_verified_at: property.geolocation_verified_at?.toISOString() ?? null,
+      gps_verification_status: property.gps_verification_status ?? "pending",
+      verified_latitude: property.verified_latitude ?? null,
+      verified_longitude: property.verified_longitude ?? null,
       published_at: property.published_at?.toISOString() ?? null,
       created_at: property.created_at?.toISOString() ?? null,
       landlord: landlord ? {
