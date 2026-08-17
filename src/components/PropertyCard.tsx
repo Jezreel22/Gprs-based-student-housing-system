@@ -12,7 +12,6 @@ import { useMyFavoriteIds, useToggleFavorite } from "@/hooks/use-favorites";
 import type { PropertySummaryWithLocation } from "@/lib/maps/types";
 import { formatDistance } from "@/lib/maps/utils";
 import { estimateWalkMinutes, formatDuration } from "@/lib/maps/travel";
-import { PROXIMITY_CLASSIFICATIONS } from "@/lib/maps/proximity-score";
 
 interface PropertyCardProps {
   property: PropertySummary;
@@ -129,7 +128,7 @@ export default function PropertyCard({ property }: PropertyCardProps) {
             {trustHighlight && verified ? " · Trusted landlord" : verified ? " · Verified landlord" : ""}
           </p>
 
-          {/* Distance from NAUB campus + walking estimate + proximity badge.
+          {/* Distance from NAUB campus + walking estimate.
               Hidden when the listing has no coordinates (e.g. favorites
               payload) — no API call, just a straight-line heuristic. */}
           {hasDistance && (
@@ -142,20 +141,6 @@ export default function PropertyCard({ property }: PropertyCardProps) {
                 <Footprints className="h-3 w-3 shrink-0" />
                 ~{formatDuration(estimateWalkMinutes(distanceKm))} walk
               </span>
-              {/* Campus proximity badge (server-computed). Only shown with a
-                  pin — without coordinates the score is meaningless. */}
-              {p.proximity_score != null && p.proximity_classification && (() => {
-                const cls = PROXIMITY_CLASSIFICATIONS[p.proximity_classification];
-                return (
-                  <span
-                    className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none"
-                    style={{ background: cls.bg, color: cls.color }}
-                    title={`Campus proximity: ${p.proximity_score}/100 (${cls.label})`}
-                  >
-                    {p.proximity_score} · {cls.label}
-                  </span>
-                );
-              })()}
             </p>
           )}
 

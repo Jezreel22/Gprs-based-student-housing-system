@@ -13,7 +13,6 @@ import { MapPin, Bed, ShieldCheck, ExternalLink, Navigation, Footprints, Car } f
 import TrustBadge from "@/components/TrustBadge";
 import { formatDistance, formatNGN, buildDirectionsUrl } from "@/lib/maps/utils";
 import { estimateWalkMinutes, estimateDriveMinutes, formatDuration } from "@/lib/maps/travel";
-import { PROXIMITY_CLASSIFICATIONS } from "@/lib/maps/proximity-score";
 import type { MapCentre, NearbyProperty } from "@/lib/maps/types";
 import { pickListingPhoto, LISTING_PHOTOS } from "@/lib/listing-photos";
 
@@ -73,20 +72,6 @@ export default function NearbyPropertyCard({
 
         <div className="flex items-center gap-2 flex-wrap mb-1.5">
           <TrustBadge score={p.trust_score} size="sm" showLabel={false} />
-          {/* Campus proximity score (server-computed) — number only at this
-              card's density; the tooltip carries the classification. */}
-          {p.proximity_score != null && (
-            <span
-              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none"
-              style={{
-                background: PROXIMITY_CLASSIFICATIONS[p.proximity_classification].bg,
-                color: PROXIMITY_CLASSIFICATIONS[p.proximity_classification].color,
-              }}
-              title={`Campus proximity: ${p.proximity_score}/100 (${PROXIMITY_CLASSIFICATIONS[p.proximity_classification].label})`}
-            >
-              {p.proximity_score}
-            </span>
-          )}
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Bed className="h-3 w-3" />
             {p.rooms} {p.rooms === 1 ? "room" : "rooms"}

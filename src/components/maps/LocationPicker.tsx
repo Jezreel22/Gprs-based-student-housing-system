@@ -5,8 +5,10 @@
  *
  * A reusable location capture component for the listing wizard.
  * Combines an address search (Mapbox forward geocoding via LocationSearch)
- * with an interactive draggable map pin so landlords can pinpoint the exact
- * property location without needing to know lat/lng coordinates.
+ * with an interactive draggable map pin and a "Use my current location"
+ * button so landlords can pinpoint the exact property location without
+ * needing to know lat/lng coordinates — and without needing to type
+ * anything if they're already at the property with their phone.
  *
  * Usage:
  *   <LocationPicker onChange={(coords, label) => { setLocation(coords); }} />
@@ -19,8 +21,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type mapboxgl from "mapbox-gl";
 import { useMapbox } from "@/hooks/use-mapbox";
+import { useGeolocation } from "@/hooks/use-geolocation";
 import LocationSearch from "./LocationSearch";
-import { MapPin, Loader2 } from "lucide-react";
+import { MapPin, Loader2, Navigation, CheckCircle2 } from "lucide-react";
 import { NAUB_COORDS, NAUB_DEFAULT_ZOOM } from "@/lib/maps/constants";
 import type { MapCentre } from "@/lib/maps/types";
 
@@ -32,6 +35,18 @@ interface LocationPickerProps {
 }
 
 const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
+
+// Plain-language messages for each geolocation error code. No jargon — this
+// picker is shown in the listing wizard where users may not be technical.
+const GEO_ERROR_MESSAGES: Record<string, string> = {
+  permission_denied:
+    "Allow location access to pin your spot — or drag the red pin on the map.",
+  position_unavailable:
+    "Couldn't find your location right now. Drag the red pin on the map instead.",
+  timeout: "Location request timed out. Try again, or drag the pin on the map.",
+  unsupported:
+    "Your browser doesn't support location. Drag the red pin on the map instead.",
+};
 
 export default function LocationPicker({
   onChange,
@@ -47,6 +62,44 @@ export default function LocationPicker({
   const [coords, setCoords] = useState<MapCentre | null>(initialCoords);
   const [label, setLabel] = useState(initialLabel);
   const [isGeocoding, setIsGeocoding] = useState(false);
+
+  const geo = useGeolocation();
+
+  /**
+   * Move the pin + map to the given coords. Safe to call before the map has
+   * finished loading — the map effect below will pick up the latest `coords`
+   * state and initialise centred on it.
+   */
+  const placePinAt = useCallback(
+    (c: MapCentre) => {
+      setCoords(c);
+      if (mapInstanceRef.current && markerRef.current) {
+        markerRef.current.setLngLat([c.lng, c.lat]);
+        mapInstanceRef.current.flyTo({
+          center: [c.lng, c.lat],
+          zoom: 17,
+          duration: 800,
+        });
+      }
+    },
+    []
+  );
+
+  const handleUseMyLocation = useCallback(() => {
+    geo.requestLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When a GPS fix resolves, drop the pin at it and reverse-geocode the label.
+  const prevGeoTimestamp = useRef<number | null>(null);
+  useEffect(() => {
+    if (!geo.coords || prevGeoTimestamp.current === geo.timestamp) return;
+    prevGeoTimestamp.current = geo.timestamp;
+    const c = { lat: geo.coords.lat, lng: geo.coords.lng };
+    placePinAt(c);
+    reverseGeocode(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [geo.coords, geo.timestamp]);
 
   // Initialise or update the map when Mapbox GL becomes available.
   useEffect(() => {
@@ -189,19 +242,55 @@ export default function LocationPicker({
         )}
       </div>
 
+      {/*
+        Stand-at-the-property-and-tap-here escape hatch. Visible whether or not
+        the Mapbox map has loaded — a non-literate landlord on a 3G connection
+        shouldn't need to wait for tiles. Big tap target, plain label.
+      */}
+      <button
+        type="button"
+        onClick={handleUseMyLocation}
+        disabled={geo.isLoading}
+        aria-label="Use my current location"
+        className="flex items-center justify-center gap-2 h-12 px-4 rounded-xl border-2 border-primary/40 bg-primary/5 text-primary text-base font-semibold hover:bg-primary/10 hover:border-primary/60 disabled:opacity-60 transition-colors"
+      >
+        {geo.isLoading ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+            <span>Finding your spot…</span>
+          </>
+        ) : (
+          <>
+            <Navigation className="h-5 w-5 shrink-0" />
+            <span>Use my current location</span>
+          </>
+        )}
+      </button>
+
+      {/*
+        Geolocation error — friendly one-liner with the drag-the-pin fallback.
+        We don't hide the button on error: the user may want to retry, and the
+        pin is always an alternative.
+      */}
+      {geo.error && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          {GEO_ERROR_MESSAGES[geo.error] ?? GEO_ERROR_MESSAGES.unsupported}
+        </p>
+      )}
+
       {/* Interactive map with draggable pin */}
       {isLoaded && (
         <div>
           <p className="text-xs text-muted-foreground mb-1.5">
-            Drag the pin to the exact property location, or tap anywhere on the
-            map.
+            Or drag the red pin to the exact property location, or tap anywhere
+            on the map.
           </p>
           <div className="relative rounded-xl overflow-hidden border border-[#EBEBEB]">
             <div ref={mapRef} className="w-full h-52" />
             {!coords && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/10 pointer-events-none">
                 <span className="text-xs text-white bg-black/60 px-2 py-1 rounded">
-                  Drag pin to set location
+                  Drag pin or tap to set location
                 </span>
               </div>
             )}
@@ -209,22 +298,31 @@ export default function LocationPicker({
         </div>
       )}
 
-      {/* Live coords readout */}
+      {/*
+        Confirmation chip — replaces the previous tiny text-only readout.
+        Stays visible whether the pin came from search, drag, click, or the
+        "Use my location" button. Green-on-cream matches the brand's success
+        colour; the lat/lng fallback is only shown when no label resolved.
+      */}
       {coords && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <MapPin className="h-3.5 w-3.5 shrink-0" />
-          {isGeocoding ? (
-            <span className="flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Getting address…
-            </span>
-          ) : label ? (
-            <span className="line-clamp-1">{label}</span>
-          ) : (
-            <span>
-              {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
-            </span>
-          )}
+        <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 text-sm">
+            <p className="font-semibold text-emerald-900">Location pinned</p>
+            {isGeocoding ? (
+              <p className="flex items-center gap-1 text-emerald-700 text-xs mt-0.5">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Getting address…
+              </p>
+            ) : label ? (
+              <p className="text-emerald-800 line-clamp-2 mt-0.5">{label}</p>
+            ) : (
+              <p className="text-emerald-800 text-xs mt-0.5 font-mono">
+                {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+              </p>
+            )}
+          </div>
+          <MapPin className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
         </div>
       )}
     </div>

@@ -14,6 +14,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { handleError, jsonResponse, errorResponse, getQueryParams } from "@/lib/api";
+import { BORNO_BBOX } from "@/lib/maps/constants";
 
 const GeocodeQuery = z.object({
   address: z.string().min(2).max(300).optional(),
@@ -61,9 +62,18 @@ async function tryNominatim(q: { address?: string; latlng?: string }): Promise<G
   // OpenStreetMap Nominatim — free, no key, decent coverage for towns.
   // Usage policy requires a meaningful User-Agent and a ~1 req/sec ceiling,
   // so the callers (and the backfill script) should throttle.
+  //
+  // Bias to Borno State so a generic query like "shop" doesn't surface Lagos
+  // (Nigerian OSM coverage is good for Lagos, sparse for Biu, so without
+  // clamping the population-prominence order returns Lagos first).
   const base = "https://nominatim.openstreetmap.org/search";
+  // Nominatim `viewbox` is `west,north,east,south` (note north/south swapped
+  // from Mapbox). `countrycodes=ng` hard-clamps to Nigeria; `viewbox` adds a
+  // soft preference so results from across the country can still surface
+  // when the bbox is too restrictive.
+  const viewbox = `${BORNO_BBOX.west},${BORNO_BBOX.north},${BORNO_BBOX.east},${BORNO_BBOX.south}`;
   const url = q.address
-    ? `${base}?q=${encodeURIComponent(q.address)}&format=json&addressdetails=1&limit=1`
+    ? `${base}?q=${encodeURIComponent(q.address)}&format=json&addressdetails=1&limit=1&countrycodes=ng&viewbox=${viewbox}`
     : null;
   const reverseUrl = q.latlng
     ? `https://nominatim.openstreetmap.org/reverse?lat=${encodeURIComponent(q.latlng.split(",")[0])}&lon=${encodeURIComponent(q.latlng.split(",")[1])}&format=json`

@@ -3,12 +3,17 @@
 /**
  * LocationSearch
  *
- * Debounced address search bound to Nigerian locations.
+ * Debounced address search bound to Borno State (NAUB's operating area).
  *
  * Uses Mapbox's forward geocoding API (good coverage for Nigeria) when a
  * NEXT_PUBLIC_MAPBOX_TOKEN is available, and transparently falls back to the
  * app's own /api/geocode route (Nominatim, no key) otherwise — so the search
  * box keeps working even before a token is configured.
+ *
+ * Both providers receive `proximity=NAUB` and a `bbox` clamp to Borno State
+ * so population-prominence ranking doesn't surface Lagos / Abuja / Port
+ * Harcourt ahead of Biu. Without this clamp, a generic query like "shop"
+ * returns Lagos results first.
  *
  * Calls onSelect with the chosen place's `{ lat, lng }` and label.
  */
@@ -16,6 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search, X, Loader2 } from "lucide-react";
 import type { MapCentre } from "@/lib/maps/types";
+import { NAUB_COORDS, BORNO_BBOX } from "@/lib/maps/constants";
 
 interface MapboxFeature {
   center: [number, number]; // [lng, lat]
@@ -30,6 +36,11 @@ interface LocationSearchProps {
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 const COUNTRY = "ng";
+// Mapbox `bbox` is west,south,east,north in lng,lat order.
+const MAPBOX_BBOX = `${BORNO_BBOX.west},${BORNO_BBOX.south},${BORNO_BBOX.east},${BORNO_BBOX.north}`;
+// Mapbox `proximity` is `lng,lat`. Pulls results toward NAUB even when the
+// query is ambiguous.
+const MAPBOX_PROXIMITY = `${NAUB_COORDS.lng},${NAUB_COORDS.lat}`;
 
 export default function LocationSearch({
   onSelect,
@@ -79,7 +90,14 @@ export default function LocationSearch({
             `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
               q
             )}.json` +
-            `?access_token=${TOKEN}&country=${COUNTRY}&limit=6&autocomplete=true`;
+            `?access_token=${TOKEN}` +
+            `&country=${COUNTRY}` +
+            // Bias + clamp to Borno State so prominence ranking doesn't
+            // surface Lagos/Abuja for queries like "shop" or "market".
+            `&proximity=${MAPBOX_PROXIMITY}` +
+            `&bbox=${MAPBOX_BBOX}` +
+            `&limit=6` +
+            `&autocomplete=true`;
           const res = await fetch(url, { signal: controller.signal });
           if (res.ok) {
             const body = await res.json();

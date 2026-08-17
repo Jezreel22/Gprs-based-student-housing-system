@@ -262,6 +262,20 @@ export default function ListProperty() {
                   </FormItem>
                 )} />
 
+                {/*
+                  Illiterate-user tip. The map below accepts a draggable pin AND
+                  a "Use my current location" button — neither requires typing.
+                  Surface that escape hatch here so a landlord who can't read or
+                  write can skip the address field and still post an accurate
+                  listing.
+                */}
+                <p className="text-xs text-muted-foreground bg-[#F7F7F7] border border-[#EBEBEB] rounded-lg px-3 py-2">
+                  <strong className="text-foreground">Can't type the address?</strong>{" "}
+                  Skip this field. Scroll down and tap <em>"Use my current location"</em>,
+                  or drag the red pin to your property on the map. Either way
+                  the listing is geotagged accurately.
+                </p>
+
                 {/* Location picker — search for address, then drag pin to confirm exact spot */}
                 <LocationPicker
                   onChange={(coords: MapCentre | null) => {

@@ -4,7 +4,6 @@
  */
 
 import type { PropertySummary } from "@/api/generated/api.schemas";
-import type { ProximityClassification } from "@/lib/maps/proximity-score";
 
 /**
  * A PropertySummary with the location fields GET /api/properties now includes
@@ -17,8 +16,6 @@ export type PropertySummaryWithLocation = PropertySummary & {
   longitude?: number | null;
   distance_from_naub_km?: number | null;
   geolocation_verified_at?: string | null;
-  proximity_score?: number;
-  proximity_classification?: ProximityClassification;
 };
 
 export interface NearbyPropertyLandlord {
@@ -46,8 +43,6 @@ export interface NearbyProperty {
   distance_from_centre_km: number;
   distance_from_naub_km: number;
   geolocation_verified_at: string | null;
-  proximity_score: number;
-  proximity_classification: ProximityClassification;
   landlord: NearbyPropertyLandlord | null;
 }
 

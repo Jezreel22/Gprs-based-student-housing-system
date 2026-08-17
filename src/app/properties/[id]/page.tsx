@@ -548,6 +548,7 @@ export default function PropertyDetail() {
                   rentAmountNgn={property.rent_amount_ngn}
                   height={320}
                   route={routeDirections?.geometry ?? null}
+                  userLocation={userLoc.coords}
                 />
               ) : (
                 <div className="rounded-xl overflow-hidden border border-[#EBEBEB] bg-[#F7F7F7] flex flex-col items-center justify-center gap-3 p-6 text-center"

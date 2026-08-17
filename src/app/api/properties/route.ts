@@ -9,7 +9,6 @@ import { logFromRequest } from "@/lib/log";
 import { formatTrustScore } from "@/lib/format";
 import { TRUST_BASELINE } from "@/lib/trust/levels";
 import { haversineDistanceSql, NAUB_LAT, NAUB_LNG } from "@/lib/maps/geo-sql";
-import { computeProximityScore } from "@/lib/maps/proximity-score";
 import type { PropertyListResponse, PropertySummary } from "@/api/generated/api.schemas";
 
 const GetPropertiesQuery = z.object({
@@ -124,11 +123,9 @@ export async function GET(req: NextRequest) {
     else if (q.sort === "most_trusted") {
       orderBy = sql`COALESCE(${trustScoresTable.total_score}, ${TRUST_BASELINE}) DESC, ${propertiesTable.created_at} DESC`;
     } else if (q.sort === "campus_proximity") {
-      // Distance is the dominant proximity-score component (35 of 95 pts) and
-      // is monotonic with the score's largest term, so sorting by it keeps
-      // pagination server-correct. Verified-landlord and rating act as
-      // tiebreakers — the same priority order as the score's smaller terms.
-      // NULLS LAST pushes unpinned listings to the end.
+      // Sort by straight-line distance from NAUB (ascending). Verified-landlord
+      // and rating act as tiebreakers. NULLS LAST pushes unpinned listings
+      // to the end.
       orderBy = sql`${naubDistanceSql} ASC NULLS LAST,
         CASE WHEN ${usersTable.verification_status} = 'verified' THEN 0 ELSE 1 END,
         COALESCE(${trustScoresTable.average_rating}, 0) DESC`;
@@ -178,7 +175,7 @@ export async function GET(req: NextRequest) {
         trust: trustScoresTable,
         // Distance from the NAUB campus for every listing — drives the
         // "X km from NAUB · ~N min walk" line on property cards and the
-        // proximity score. NULL when the listing has no coordinates.
+        // "Nearest to NAUB" sort. NULL when the listing has no coordinates.
         distance_from_naub_km: naubDistanceSql,
         // Fold the hero photo into the same round-trip as a correlated
         // subquery (LATERAL-free, runs against the outer `properties` row).
@@ -238,17 +235,14 @@ export async function GET(req: NextRequest) {
       // shape matches the previous behaviour (`landlord: undefined` instead of
       // `landlord: { id: null, ... }`).
       const hasLandlord = l && l.id != null;
-      // Campus proximity score — computed server-side from the same pure
-      // module the detail page uses, so every surface shows the same number.
+      // Location for cards: coordinates + distance from NAUB. Undefined when
+      // the listing has none (card hides the distance line). These three
+      // fields aren't on the generated PropertySummary schema yet, so the
+      // object is widened via the cast below — same pattern the detail route
+      // uses for property_rating_average.
       const distKm = p.latitude != null && p.longitude != null
         ? Number(row.distance_from_naub_km.toFixed(3))
         : null;
-      const proximity = computeProximityScore({
-        distanceFromNaubKm: distKm,
-        gpsVerified: p.geolocation_verified_at != null,
-        landlordVerified: hasLandlord ? l.verification_status === "verified" : false,
-        averageRating: ts?.average_rating ?? null,
-      });
       return {
         id: p.id,
         address: p.address,
@@ -259,18 +253,11 @@ export async function GET(req: NextRequest) {
         hero_photo_url: hero,
         amenities: p.amenities ?? {},
         created_at: p.created_at?.toISOString() ?? null,
-        // Location for cards: coordinates + distance from NAUB. Undefined when
-        // the listing has none (card hides the distance line). These three
-        // fields aren't on the generated PropertySummary schema yet, so the
-        // object is widened via the cast below — same pattern the detail route
-        // uses for property_rating_average.
         latitude: p.latitude ?? undefined,
         longitude: p.longitude ?? undefined,
         distance_from_naub_km: distKm ?? undefined,
         geolocation_verified_at: p.geolocation_verified_at?.toISOString() ?? null,
         gps_verification_status: p.gps_verification_status ?? "pending",
-        proximity_score: proximity.score,
-        proximity_classification: proximity.classification,
         landlord: hasLandlord ? {
           id: l.id,
           first_name: l.first_name,

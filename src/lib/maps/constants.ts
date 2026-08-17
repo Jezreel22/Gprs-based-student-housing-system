@@ -10,6 +10,26 @@ export const NAUB_COORDS = { lat: 10.6102, lng: 12.1978 } as const;
 /** Default zoom shows ~5 km radius comfortably */
 export const NAUB_DEFAULT_ZOOM = 14;
 
+/**
+ * Borno State bounding box used to constrain Mapbox geocoding results so that
+ * Nigerian prominence ranking doesn't surface Lagos / Abuja / Port Harcourt
+ * ahead of Biu. Mapbox `bbox` is `west,south,east,north` in `lng,lat` order.
+ *
+ *   west  11.5°E — Borno's western border
+ *   south 10.0°N — includes Biu in the south
+ *   east  14.7°E — Borno's eastern border
+ *   north 13.7°N — Lake Chad shoreline in the north
+ *
+ * Nominatim accepts the same shape as `viewbox` (west,north,east,south — note
+ * north/south swapped); see `/api/geocode/route.ts` for the converted form.
+ */
+export const BORNO_BBOX = {
+  west: 11.5,
+  south: 10.0,
+  east: 14.7,
+  north: 13.7,
+} as const;
+
 /** Radius options shown in the filter dropdown (km) */
 export const RADIUS_OPTIONS = [2, 5, 10, 20, 50] as const;
 export type RadiusKm = (typeof RADIUS_OPTIONS)[number];

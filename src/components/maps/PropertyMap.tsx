@@ -21,6 +21,7 @@ import { useMapbox } from "@/hooks/use-mapbox";
 import {
   buildDirectionsUrl,
   buildMarkerIcon,
+  buildUserLocationIcon,
   iconElement,
 } from "@/lib/maps/utils";
 
@@ -36,6 +37,8 @@ interface PropertyMapProps {
   route?: LineString | null;
   /** Hex colour for the route line. Defaults to the brand red. */
   routeColour?: string;
+  /** User's GPS coords — renders a blue dot marker on top of the map. */
+  userLocation?: { lat: number; lng: number } | null;
 }
 
 const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
@@ -50,11 +53,13 @@ export default function PropertyMap({
   className = "",
   route = null,
   routeColour,
+  userLocation = null,
 }: PropertyMapProps) {
   const { isLoaded, isError, mapboxgl } = useMapbox();
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
+  const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
   // Route data that arrived before the map style finished loading —
   // flushed by the "load" handler in the init effect.
   const pendingRouteRef = useRef<LineString | null>(null);
@@ -151,10 +156,28 @@ export default function PropertyMap({
     map.setPaintProperty("route-line", "line-color", routeColour);
   }, [routeColour]);
 
+  // ── User location marker (blue dot) ───────────────────────────────────────
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const mb = mapboxgl;
+    if (!map || !mb || !userLocation) return;
+
+    userMarkerRef.current?.remove();
+    userMarkerRef.current = null;
+
+    userMarkerRef.current = new mb.Marker({
+      element: iconElement(buildUserLocationIcon()),
+      anchor: "center",
+    })
+      .setLngLat([userLocation.lng, userLocation.lat])
+      .addTo(map);
+  }, [mapboxgl, userLocation]);
+
   // Cleanup
   useEffect(() => {
     return () => {
       markerRef.current?.remove();
+      userMarkerRef.current?.remove();
       mapInstanceRef.current?.remove();
       mapInstanceRef.current = null;
     };
