@@ -74,6 +74,8 @@ const GEO_ERROR_MESSAGES: Record<string, string> = {
     "Taking too long to find you — try again outdoors or near a window, or search for an address instead.",
   unsupported:
     "Your browser doesn't support location. Try searching for an address on the map.",
+  insecure_context:
+    "Location needs a secure connection. Open this site over HTTPS (localhost is okay for development), then try again.",
 };
 
 function MapPageInner() {

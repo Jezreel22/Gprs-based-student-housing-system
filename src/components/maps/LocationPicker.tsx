@@ -48,6 +48,8 @@ const GEO_ERROR_MESSAGES: Record<string, string> = {
     "Taking too long to find you — try outdoors or near a window, or drag the red pin to your property instead.",
   unsupported:
     "Your browser doesn't support location. Drag the red pin on the map to your property.",
+  insecure_context:
+    "Location needs a secure connection. Open this site over HTTPS (localhost is okay for development), then try again or drag the red pin.",
 };
 
 export default function LocationPicker({

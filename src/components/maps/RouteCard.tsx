@@ -79,6 +79,7 @@ const LOCATION_ERROR_HINT: Record<GeolocationErrorCode, string> = {
   position_unavailable: "Couldn't get a location fix right now.",
   timeout: "Getting your location timed out — try again.",
   unsupported: "Location isn't supported on this device.",
+  insecure_context: "Location needs HTTPS on this device.",
 };
 
 export default function RouteCard({

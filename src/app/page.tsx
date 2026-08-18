@@ -7,6 +7,7 @@ import { useQuery, useQueries, keepPreviousData } from "@tanstack/react-query";
 import { getGetPropertiesQueryOptions } from "@/api";
 import NavBar from "@/components/NavBar";
 import PropertyCard from "@/components/PropertyCard";
+import HeroSlideshow from "@/components/HeroSlideshow";
 import Logo from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,17 +155,18 @@ export default function Home() {
     <div className="min-h-screen bg-[#F7F7F7]">
       <NavBar />
 
-      {/* Hero */}
-      <section className="bg-white">
-        <div className="max-w-7xl mx-auto px-4 py-24 md:py-32 flex flex-col items-center text-center">
-          <p className="text-sm font-semibold text-primary uppercase tracking-widest mb-4">
+      {/* Hero — photo slideshow background with search overlay */}
+      <section className="relative bg-[#111111] overflow-hidden">
+        <HeroSlideshow />
+        <div className="relative max-w-7xl mx-auto px-4 py-24 md:py-32 flex flex-col items-center text-center">
+          <p className="text-sm font-semibold uppercase tracking-widest mb-4" style={{ color: "#FFD3D4" }}>
             Student Housing Near NAUB Campus
           </p>
-          <h1 className="text-4xl md:text-6xl font-extrabold text-foreground leading-tight tracking-tight mb-5 max-w-3xl">
+          <h1 className="text-4xl md:text-6xl font-extrabold text-white leading-tight tracking-tight mb-5 max-w-3xl drop-shadow-sm">
             Find Your Perfect{" "}
-            <span style={{ color: "#FF5A5F" }}>Student Home</span>
+            <span style={{ color: "#FF8A8D" }}>Student Home</span>
           </h1>
-          <p className="text-lg text-muted-foreground max-w-xl mb-10">
+          <p className="text-lg text-white/85 max-w-xl mb-10 drop-shadow-sm">
             Browse verified, affordable listings near Nigerian Army University Biu.
           </p>
 

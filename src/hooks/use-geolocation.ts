@@ -22,7 +22,8 @@ export type GeolocationErrorCode =
   | "permission_denied"
   | "position_unavailable"
   | "timeout"
-  | "unsupported";
+  | "unsupported"
+  | "insecure_context";
 
 export interface GeolocationState {
   coords: { lat: number; lng: number; accuracy: number } | null;
@@ -41,6 +42,13 @@ export function useGeolocation() {
   });
 
   const requestLocation = useCallback(() => {
+    // Geolocation is blocked on deployed HTTP origins. localhost is treated as
+    // secure by browsers, so this check also gives a useful local diagnostic.
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setState({ coords: null, isLoading: false, error: "insecure_context", timestamp: null });
+      return;
+    }
+
     if (!navigator.geolocation) {
       setState({ coords: null, isLoading: false, error: "unsupported", timestamp: null });
       return;
