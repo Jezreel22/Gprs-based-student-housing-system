@@ -62,12 +62,18 @@ const DEFAULT_FILTERS: MapFilters = {
 };
 
 // ── Geolocation error messages ─────────────────────────────────────────────
+// Timeout is the most common failure mode on mobile (no GPS lock indoors or
+// with GPS disabled). These messages are actionable so the user knows the
+// fallback is to search for an address instead.
 const GEO_ERROR_MESSAGES: Record<string, string> = {
   permission_denied:
-    "Location access was denied. Enable it in your browser settings.",
-  position_unavailable: "Your location could not be determined right now.",
-  timeout: "Location request timed out. Please try again.",
-  unsupported: "Your browser doesn't support location services.",
+    "Location access was denied. Check your browser or phone settings to allow location access, then try again.",
+  position_unavailable:
+    "Couldn't find your location — make sure location services are turned on in your phone settings, then try again.",
+  timeout:
+    "Taking too long to find you — try again outdoors or near a window, or search for an address instead.",
+  unsupported:
+    "Your browser doesn't support location. Try searching for an address on the map.",
 };
 
 function MapPageInner() {

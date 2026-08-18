@@ -8,6 +8,11 @@
  * Deliberately one-shot (`getCurrentPosition`, not `watchPosition`): location
  * is fetched only when `requestLocation` is called, so we never poll or drain
  * the battery. `maximumAge: 60s` lets the browser serve a recent cached fix.
+ *
+ * `enableHighAccuracy: false` (default): uses network-based location (IP/WiFi)
+ * which is fast (~1–3 s) and accurate enough for "near this area" use in a
+ * rental app. `enableHighAccuracy: true` forces GPS which is slow (10–60 s)
+ * indoors and commonly times out — avoid unless sub-10 m precision is needed.
  */
 "use client";
 
@@ -65,7 +70,7 @@ export function useGeolocation() {
               : "timeout";
         setState({ coords: null, isLoading: false, error: code, timestamp: null });
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60_000 }
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60_000 }
     );
   }, []);
 

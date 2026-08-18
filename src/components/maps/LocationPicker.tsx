@@ -38,14 +38,16 @@ const MAP_STYLE = "mapbox://styles/mapbox/streets-v12";
 
 // Plain-language messages for each geolocation error code. No jargon — this
 // picker is shown in the listing wizard where users may not be technical.
+// The drag-the-pin fallback is always available as an alternative.
 const GEO_ERROR_MESSAGES: Record<string, string> = {
   permission_denied:
-    "Allow location access to pin your spot — or drag the red pin on the map.",
+    "Location access was denied. Tap 'Allow' when your browser or phone asks, or drag the red pin instead.",
   position_unavailable:
-    "Couldn't find your location right now. Drag the red pin on the map instead.",
-  timeout: "Location request timed out. Try again, or drag the pin on the map.",
+    "Couldn't find your location. Try turning on location services in your phone settings, or drag the red pin.",
+  timeout:
+    "Taking too long to find you — try outdoors or near a window, or drag the red pin to your property instead.",
   unsupported:
-    "Your browser doesn't support location. Drag the red pin on the map instead.",
+    "Your browser doesn't support location. Drag the red pin on the map to your property.",
 };
 
 export default function LocationPicker({
