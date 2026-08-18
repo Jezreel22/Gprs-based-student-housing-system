@@ -94,19 +94,40 @@ export default function HeroSlideshow({ className = "" }: { className?: string }
       aria-roledescription="carousel"
       aria-label="Featured properties near NAUB campus"
     >
-      {/* Slides — stacked, crossfaded by opacity */}
+      {/* Slides — stacked, crossfaded by opacity.
+          Each slide is two layers: a blurred, cover-scaled copy of the photo
+          filling the whole hero (so there's never an empty band), with the
+          sharp original contained and centred on top. The source photos are
+          mixed aspect ratios at phone resolution (one is portrait) —
+          object-cover alone would crop the portrait shot to a sliver, and
+          blur-fill keeps everything visible without stretching. */}
       {SLIDES.map((slide, i) => (
-        <img
+        <div
           key={slide.src}
-          src={slide.src}
-          alt={slide.alt}
-          loading={i === 0 ? "eager" : "lazy"}
-          decoding="async"
           aria-hidden={i !== index}
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
+          className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
             i === index ? "opacity-100" : "opacity-0"
           }`}
-        />
+        >
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${slide.src})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              filter: "blur(32px) saturate(1.2)",
+              transform: "scale(1.1)",
+            }}
+          />
+          <img
+            src={slide.src}
+            alt={slide.alt}
+            loading={i === 0 ? "eager" : "lazy"}
+            decoding="async"
+            draggable={false}
+            className="relative w-full h-full object-contain drop-shadow-lg"
+          />
+        </div>
       ))}
 
       {/* Contrast overlay — keeps white hero text readable over any photo */}
